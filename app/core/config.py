@@ -20,13 +20,17 @@ class Settings(BaseSettings):
     environment: Literal["dev", "demo", "prod"] = "dev"
     log_level: str = "INFO"
 
-    # --- LLMs (provider-agnostic via LangChain init_chat_model) ---
-    llm_provider: str = "anthropic"
-    llm_model: str = "claude-sonnet-5-5"  # reasoning: supervisor, RLM planner, response
-    fast_llm_model: str = "claude-haiku-5-5"  # high-volume: guards, batch map, citation judge
-    llm_timeout_s: float = 60.0
-    anthropic_api_key: SecretStr | None = None
-    openai_api_key: SecretStr | None = None
+    # --- LLMs (provider-agnostic via LangChain init_chat_model; see app/core/llm.py) ---
+    llm_provider: str = "mistralai"
+    mistral_api_key: SecretStr | None = None
+    llm_model: str = "mistral-large-latest"  # main: supervisor, response, RLM reduce
+    fast_llm_model: str = "mistral-small-latest"  # fast: input guard, RLM batch map, citations
+    code_llm_model: str = "codestral-latest"  # code: RLM planner writes the Python search plan
+    code_llm_fallback: str = "codestral-latest"  # used if code_llm_model is unavailable
+    # One semaphore for every LLM call: Mistral limits are per workspace, shared across keys.
+    llm_max_concurrency: int = Field(default=3, ge=1)
+    llm_timeout_s: float = Field(default=60.0, gt=0)
+    llm_max_retries: int = Field(default=4, ge=0)
 
     # --- Pinecone ---
     pinecone_api_key: SecretStr | None = None
