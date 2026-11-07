@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets and local state
+.env
+*.sqlite
+*.sqlite3
+data/checkpoints/
+
+# OS / editor noise (WSL copies from Windows add Zone.Identifier streams)
+*:Zone.Identifier
+.DS_Store
+.vscode/
+.idea/
+
+# Private working notes (kept locally, not published)
+doc/
+CLAUDE.md
