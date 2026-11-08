@@ -12,6 +12,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from langgraph.errors import GraphInterrupt
+
 from app.agents.events import emit
 from app.agents.state import AgentError, AgentState
 from app.core.errors import AppError
@@ -32,6 +34,10 @@ def instrumented(name: str, fallback: Fallback | None = None) -> Callable[[Node]
             try:
                 update = await fn(state)
                 status = "ok"
+            except GraphInterrupt:
+                # A human-approval pause, not a failure: re-raise so LangGraph checkpoints
+                # the interrupt instead of recording an error and running the fallback.
+                raise
             except Exception as exc:
                 status = "error"
                 code = exc.code if isinstance(exc, AppError) else "node_failed"

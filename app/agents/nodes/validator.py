@@ -11,10 +11,17 @@ references, because an answer with honest caveats beats an endless loop or no an
 
 import re
 
+from app.agents import prompts
 from app.agents.events import emit
 from app.agents.state import AgentState, ValidationResult
 from app.core.logging import get_logger
 from app.retrieval.models import RetrievedChunk
+from app.security.output_guard import (
+    SAFE_BLOCK_MESSAGE,
+    OutputIssue,
+    check_output,
+    redact_secrets,
+)
 
 # One id like "INC-2026-0214#03"; a bracket holds a single id, or several ids separated by
 # commas ("[A#01, B#02]"). Adjacent ids also arrive as separate brackets ("[A#01][B#02]");
@@ -129,12 +136,21 @@ def strip_unknown_citations(answer: str, unknown: list[str]) -> str:
     return "".join(out)
 
 
+def _run_output_guard(answer: str) -> list[OutputIssue]:
+    """Deterministic output check: prompt-fragment/secret leakage and brand-voice warnings."""
+    return check_output(
+        answer, system_prompt_fragments=[prompts.SUPERVISOR[:200], prompts.RESPONSE[:200]]
+    )
+
+
 async def validator_node(state: AgentState) -> dict:
     """Validate the draft answer and either admit it or prepare the stripped fallback."""
     answer = state.get("draft_answer") or ""
     retrieved = state.get("retrieved") or []
     route = state.get("route")
-    requires_evidence = route is not None and bool(route.agents)
+    # Evidence only where evidence exists: retrieval/research produce citable chunks; a
+    # tools-only answer is about live directory data and legitimately has no chunk ids.
+    requires_evidence = route is not None and bool({"retrieval", "research"} & set(route.agents))
     attempts = state.get("response_attempts", 0)
 
     result = validate_answer(answer, retrieved, requires_evidence)
@@ -167,6 +183,27 @@ async def validator_node(state: AgentState) -> dict:
                 strip_unknown_citations(answer, result.unknown_citations)
                 + "\n\n_Note: some references could not be verified and were removed._"
             )
+
+    issues = _run_output_guard(answer)
+    if issues:
+        emit(
+            "guardrail",
+            node="validator",
+            stage="output",
+            issues=[issue.model_dump() for issue in issues],
+        )
+        blocked = [issue for issue in issues if issue.severity == "block"]
+        if blocked:
+            # secret_leak is recoverable by redaction; anything else blocked is replaced
+            # wholesale. No retry: the model just produced an unsafe draft, so the budget is
+            # exhausted here to force route_after_validation straight to finalize.
+            update["draft_answer"] = (
+                redact_secrets(answer)
+                if any(issue.code == "secret_leak" for issue in blocked)
+                else SAFE_BLOCK_MESSAGE
+            )
+            update["response_attempts"] = MAX_RESPONSE_ATTEMPTS
+        # warn-severity issues are only reported (already surfaced by the guardrail event).
     return update
 
 

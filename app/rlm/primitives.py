@@ -31,6 +31,7 @@ from app.core.logging import get_logger
 from app.retrieval.hybrid import hybrid_search
 from app.retrieval.models import ALL_DEPARTMENTS, RetrievalQuery, RetrievedChunk
 from app.security.rbac import UserContext
+from app.security.sanitizer import sanitize_chunk_text
 from ingestion.chunk import chunk_corpus, load_corpus
 from ingestion.models import AccessLevel, Chunk, Department, DocumentMeta, DocumentType
 
@@ -351,6 +352,8 @@ async def _llm_query(session: PrimitiveSession, kwargs: dict[str, Any]) -> str:
     if not isinstance(context, str):
         raise ValueError("context must be a string")
     context = context[: session.max_context_chars]
+    # Untrusted retrieved text: strip instruction-like content before it reaches the model.
+    context = sanitize_chunk_text(context).text
 
     if session.llm_calls >= session.max_llm_calls:
         raise ValueError("llm_query budget exhausted")
