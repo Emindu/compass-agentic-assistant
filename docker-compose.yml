@@ -1,0 +1,47 @@
+services:
+  api:
+    build: .
+    image: compass:latest
+    # MCP_MODE is deliberately left unset: app/tools/mcp_client.py connects over stdio
+    # only — its MultiServerMCPClient config is `{"transport": "stdio"}` with command
+    # `python -m mcp_server.server`, so the API itself spawns the MCP server as a child
+    # process inside this container (MCP_MODE=inprocess would instead call the pure
+    # functions directly). The client has no network transport configured, which is why
+    # there is no separate MCP service in this compose file.
+    # Venv binaries directly: `uv run` would re-sync (incl. dev deps) at start-up.
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - checkpoints:/app/data/checkpoints
+    # slim has no curl: probe /health with the standard library instead.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  ui:
+    image: compass:latest  # same image as api; built once
+    command: >
+      streamlit run ui/streamlit_app.py
+      --server.address 0.0.0.0
+      --server.port 8501
+      --server.headless true
+      --browser.gatherUsageStats false
+    ports:
+      - "8501:8501"
+    environment:
+      COMPASS_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  checkpoints:

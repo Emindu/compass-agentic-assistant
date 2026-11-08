@@ -1,0 +1,11 @@
+.venv
+.git
+.env
+data/checkpoints
+**/__pycache__
+.pytest_cache
+.ruff_cache
+doc/
+.claude/
+*.sqlite
+**/*.sqlite
