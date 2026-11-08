@@ -10,6 +10,11 @@ show both raw scores next to the fused one.
 
 Degradation: if one index fails, results come from the other (flagged `degraded`); if both
 fail, or FAULT_PINECONE is on, the local BM25 fallback answers with the same access filters.
+
+Rerank: when enabled, the top `RERANK_CANDIDATES` fused chunks are re-ordered by Pinecone's
+hosted cross-encoder before the `top_k` / per-document cut. A reranker failure only costs
+ranking quality, so it adds a note but does not flag `degraded`: the fused order still
+answers the question.
 """
 
 import asyncio
@@ -22,6 +27,7 @@ from app.core.logging import get_logger
 from app.retrieval.dense import dense_search
 from app.retrieval.fallback_bm25 import get_bm25_fallback
 from app.retrieval.models import RetrievalQuery, RetrievalResult, RetrievedChunk
+from app.retrieval.rerank import rerank
 from app.retrieval.sparse import sparse_search
 
 log = get_logger(__name__)
@@ -114,6 +120,7 @@ async def hybrid_search(q: RetrievalQuery) -> RetrievalResult:
     alpha = s.hybrid_alpha if q.alpha is None else q.alpha
     notes: list[str] = []
     timings: dict[str, float] = {}
+    degraded = False
 
     if s.fault_pinecone:
         notes.append("Pinecone disabled by FAULT_PINECONE; using local BM25 keyword search.")
@@ -142,19 +149,50 @@ async def hybrid_search(q: RetrievalQuery) -> RetrievalResult:
         log.warning("retrieval_dense_failed", error=repr(dense))
         notes.append("Semantic search unavailable; results use keyword search only.")
         dense, alpha = [], 0.0
+        degraded = True
     if sparse_failed:
         log.warning("retrieval_sparse_failed", error=repr(sparse))
         notes.append("Keyword search unavailable; results use semantic search only.")
         sparse, alpha = [], 1.0
+        degraded = True
 
-    chunks = fuse(dense, sparse, alpha, q.top_k, q.max_per_doc)
+    reranked = False
+    chunks: list[RetrievedChunk]
+    if s.rerank_enabled and q.rerank:
+        # Over-fetch past top_k so the cross-encoder sees a real candidate pool, then apply
+        # the caller's cut and per-document cap to the *reranked* order.
+        pool = fuse(
+            dense,
+            sparse,
+            alpha,
+            top_k=max(q.top_k, s.rerank_candidates),
+            max_per_doc=q.max_per_doc,
+        )
+        if not pool:  # nothing to rerank; an empty request would only buy a misleading note
+            chunks = []
+        else:
+            try:
+                start = time.perf_counter()
+                ranked = await rerank(q.text, pool, top_n=len(pool))
+                timings["rerank"] = round((time.perf_counter() - start) * 1000, 1)
+                chunks = cap_per_doc(ranked, q.top_k, q.max_per_doc)
+                reranked = True
+            except Exception as exc:  # degrade, never raise: fused order is still good
+                log.warning("retrieval_rerank_failed", error=repr(exc))
+                notes.append("Reranker unavailable; results use fused ranking.")
+                chunks = cap_per_doc(pool, q.top_k, q.max_per_doc)
+    else:
+        chunks = fuse(dense, sparse, alpha, q.top_k, q.max_per_doc)
+
     log.info(
         "hybrid_search",
         hits=len(chunks),
         dense_candidates=len(dense),
         sparse_candidates=len(sparse),
         alpha=alpha,
+        reranked=reranked,
         clearance=q.clearance.name,
         **{f"{k}_ms": v for k, v in timings.items()},
     )
-    return RetrievalResult(chunks=chunks, degraded=bool(notes), notes=notes, timings_ms=timings)
+    # A rerank failure appends a note but must not flag `degraded`, hence the explicit bool.
+    return RetrievalResult(chunks=chunks, degraded=degraded, notes=notes, timings_ms=timings)

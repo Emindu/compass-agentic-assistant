@@ -49,6 +49,8 @@ class RetrievalQuery(BaseModel):
     # Without a cap, one long document's sections can fill every slot and hide other sources.
     max_per_doc: int = Field(default=2, ge=1, le=20)
     alpha: float | None = Field(default=None, ge=0.0, le=1.0, description="None = settings")
+    # High-volume internal callers (RLM plans) switch reranking off per query.
+    rerank: bool = True
 
 
 class RetrievedChunk(BaseModel):
@@ -68,6 +70,7 @@ class RetrievedChunk(BaseModel):
     dense_score: float | None = None
     sparse_score: float | None = None
     fused_score: float = 0.0
+    rerank_score: float | None = None
     source: Literal["pinecone", "bm25_fallback"] = "pinecone"
 
     @property

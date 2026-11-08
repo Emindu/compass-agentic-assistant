@@ -44,7 +44,9 @@ def test_filter_always_starts_with_access_clause():
 
 @pytest.fixture
 def no_fault(monkeypatch):
+    # RERANK_ENABLED=false keeps these tests on the fused-only path so no reranker call is made.
     monkeypatch.setenv("FAULT_PINECONE", "false")
+    monkeypatch.setenv("RERANK_ENABLED", "false")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

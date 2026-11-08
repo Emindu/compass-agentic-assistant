@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     pinecone_timeout_s: float = 10.0
     # Weight of the dense score in hybrid fusion: fused = alpha*dense + (1-alpha)*sparse.
     hybrid_alpha: float = Field(default=0.6, ge=0.0, le=1.0)
+    # Hosted cross-encoder applied after fusion (see app/retrieval/rerank.py for why).
+    rerank_enabled: bool = True
+    rerank_model: str = "bge-reranker-v2-m3"
+    rerank_timeout_s: float = Field(default=5.0, gt=0)
+    rerank_candidates: int = Field(default=20, ge=1, le=100)  # fused chunks sent to the reranker
 
     # --- LangSmith (the SDK reads LANGSMITH_* itself; kept here for visibility/validation) ---
     langsmith_api_key: SecretStr | None = None

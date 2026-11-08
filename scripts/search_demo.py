@@ -1,4 +1,4 @@
-"""Print attributed hybrid search results with dense, sparse and fused scores.
+"""Print attributed hybrid search results with rerank, fused, dense and sparse scores.
 
 Run:
   uv run python -m scripts.search_demo "why did card payments fail because of TLS"
@@ -47,10 +47,10 @@ async def main(args: argparse.Namespace) -> None:
     print(f"Timings ms: {result.timings_ms}  degraded={result.degraded}")
     for note in result.notes:
         print(f"  note: {note}")
-    print(f"\n{'#':>2}  {'fused':>6} {'dense':>6} {'sparse':>6}  {'access':12} citation")
+    print(f"\n{'#':>2}  {'rerank':>6} {'fused':>6} {'dense':>6} {'sparse':>6}  {'access':12} citation")
     for i, c in enumerate(result.chunks, 1):
         print(
-            f"{i:>2}  {c.fused_score:6.3f} {fmt(c.dense_score)} {fmt(c.sparse_score)}  "
+            f"{i:>2}  {fmt(c.rerank_score)} {c.fused_score:6.3f} {fmt(c.dense_score)} {fmt(c.sparse_score)}  "
             f"{c.access_level:12} {c.citation}  [{c.source}]"
         )
 

@@ -320,6 +320,9 @@ async def _search(session: PrimitiveSession, kwargs: dict[str, Any]) -> list[dic
         date_to=_opt_date(kwargs, "date_to"),
         top_k=min(top_k, _TOP_K_CAP),
         max_per_doc=3,
+        # RLM plans can issue up to 40 searches per question; reranking each would multiply
+        # latency and reranker requests, and the batch analysis LLM already reads every chunk.
+        rerank=False,
     )
     result = await hybrid_search(q)
     results: list[dict[str, Any]] = []
