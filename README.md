@@ -133,6 +133,164 @@ the routing condition; amber nodes are the guard and the validator.
 
 Source: [docs/langgraph.mmd](docs/langgraph.mmd) · vector: [docs/langgraph.svg](docs/langgraph.svg)
 
+### One request, in order (sequence diagram)
+
+Every call one chat message makes, from login to saved memory. Only one of the paths E1 to E4
+runs per turn.
+
+| Part | What happens |
+| --- | --- |
+| **A** Login | Password check, signed JWT that carries the role. |
+| **B** Gateway | Request id, body validation (400), JWT → `UserContext`, token bucket (429). |
+| **C** Memory, input guard | Load the thread; pattern check, then the fast model. Blocked turns skip to I. |
+| **D** Supervisor | Typed `RouteDecision`; code checks the role before the route is used. |
+| **E1** Retrieval | Dense + sparse with the access filter, fusion, rerank, at most 2 chunks per document. |
+| **E2** Research (RLM) | Plan → sandbox → clearance-checked primitives → parallel batches → reduce. |
+| **E3** Tools | Role-filtered tools; MCP directory lookups; admin tools pause for approval (**F**). |
+| **G–H** Response, validator | Sanitised context, streamed answer, citation check, one retry, then a safe answer. |
+| **I–J** Save, trace | Rolling summary, checkpoint, `done` event; every step is a LangSmith span. |
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as User (Streamlit UI)
+  participant API as FastAPI gateway
+  participant G as LangGraph graph
+  participant CP as Checkpointer (SQLite)
+  participant GD as Input guard
+  participant SV as Supervisor
+  participant RT as Retrieval
+  participant PC as Pinecone or BM25
+  participant RS as Research (RLM)
+  participant SB as Sandbox child
+  participant TL as Tools agent
+  participant MCP as MCP server
+  participant RV as Response and Validator
+  participant LLM as Mistral via llm.py
+
+  Note over U,LLM: A. Login
+  U->>API: POST /auth/login (username, password)
+  API->>API: PBKDF2 password check
+  API-->>U: signed JWT (sub, name, role, department, exp)
+
+  Note over U,LLM: B. Gateway
+  U->>API: POST /chat/stream (Bearer JWT, message, thread_id)
+  API->>API: middleware sets request_id
+  API->>API: Pydantic checks the body (empty or too long → 400)
+  API->>API: decode JWT → UserContext (role → clearance)
+  API->>API: token bucket takes 1 token
+  alt bucket empty
+    API-->>U: HTTP 429 with retry time
+  end
+  API->>G: astream(message + user, thread = user_id:thread_id)
+  API-->>U: SSE stream opens
+
+  Note over U,LLM: C. Memory and input guard
+  G->>CP: load saved state for this thread
+  CP-->>G: messages and summary
+  G->>G: load_memory clears the per-turn fields
+  G->>GD: input_guard(last message)
+  GD->>GD: quick pattern check
+  GD->>LLM: fast model classifies the message
+  LLM-->>GD: GuardVerdict
+  alt blocked
+    GD-->>G: refusal → go to finalize (skip D to H)
+    G-->>U: SSE guard event
+  end
+
+  Note over U,LLM: D. Supervisor decides the route
+  G->>SV: supervisor(recent messages, summary, user)
+  SV->>LLM: main model → RouteDecision
+  LLM-->>SV: intent, agents, search_query, departments, reasoning
+  SV->>SV: route_after_supervisor checks can_use(role, tool)
+  G-->>U: SSE route event with one-line reason
+
+  alt E1. documents → retrieval
+    SV->>RT: retrieval(search_query, departments)
+    RT->>PC: dense + sparse in parallel, filter access_rank ≤ clearance
+    PC-->>RT: matching chunks with scores
+    RT->>RT: fuse 0.6 dense + 0.4 sparse
+    RT->>PC: rerank top 20 (bge-reranker-v2-m3, 5 s limit)
+    PC-->>RT: reranked order (fused order if the reranker fails)
+    RT->>RT: keep top 8, at most 2 chunks per doc
+    G-->>U: SSE retrieval event (scores)
+  else E2. research → RLM (analyst or admin only)
+    SV->>RS: research(question)
+    RS->>RS: can_use(role, python_analysis) checked again
+    RS->>LLM: code model writes a Python plan
+    LLM-->>RS: plan code
+    RS->>RS: AST check (imports, dunder names, banned calls)
+    RS->>SB: start child (no keys, no network, CPU and memory limits)
+    RS->>SB: init line (code, primitive names, allowed imports)
+    loop every primitive call, at most 40
+      SB->>RS: call list_documents / get_sections / search / llm_query
+      RS->>PC: same filter, clearance from the user session (no rerank)
+      PC-->>RS: allowed chunks only
+      RS-->>SB: reply (hidden docs look like missing docs)
+    end
+    SB-->>RS: done with result, then the child is killed
+    RS->>RS: keep only chunk ids the parent really returned
+    par each batch with Send
+      RS->>LLM: fast model analyses batch 1 to N
+      LLM-->>RS: findings per batch
+    end
+    RS->>LLM: main model joins findings → common themes
+    LLM-->>RS: synthesis
+    opt a gap remains and depth below 2
+      RS->>RS: plan again with the follow-up question
+    end
+    G-->>U: SSE research events (plan, batches, join)
+  else E3. tools → directory or admin
+    SV->>TL: tools(question)
+    TL->>LLM: main model → ToolPlan, only allowed tools shown
+    LLM-->>TL: up to 3 calls, each with a reason
+    TL->>TL: check role again + Pydantic args (no extra fields)
+    alt directory tool (analyst or admin)
+      TL->>MCP: get_service_status over stdio, 10 s timeout
+      MCP-->>TL: data with private fields removed
+    else admin tool (admin only)
+      Note over TL,CP: F. Human approval
+      TL->>CP: interrupt saves the paused graph
+      G-->>API: stream stops
+      API-->>U: SSE approval event (Approve / Reject)
+      U->>API: POST /chat/resume (approved = true)
+      API->>API: admin only, thread must have a pending approval
+      API->>G: Command(resume)
+      G->>CP: load the paused graph
+      TL->>TL: execute_admin_tool checks admin + approved again
+    end
+    G-->>U: SSE tool_call events
+  else E4. small talk or out of scope
+    SV->>RV: answer directly, no search
+  end
+
+  Note over U,LLM: G. Response
+  G->>RV: response(chunks or findings or tool results)
+  RV->>RV: sanitiser removes instructions, wraps text as data
+  RV->>LLM: main model streams the answer with citations
+  LLM-->>RV: tokens
+  RV-->>U: SSE token events (word by word)
+
+  Note over U,LLM: H. Validator
+  RV->>RV: every citation must match a retrieved chunk
+  RV->>RV: output guard (no advice, no secrets, brand voice)
+  alt invalid and a retry is left
+    RV->>LLM: write the answer once more
+  else still invalid
+    RV->>RV: replace with a safe answer
+  end
+
+  Note over U,LLM: I. Finalize and save
+  G->>G: finalize writes the final message
+  G->>LLM: update_memory: fast model summarises if over 12 messages
+  G->>CP: checkpointer saves messages and summary
+  G-->>U: SSE done event
+
+  Note over U,LLM: J. Every step above is a LangSmith span tagged user, role, session
+```
+
+Source: [docs/sequence.mmd](docs/sequence.mmd) · vector: [docs/sequence.svg](docs/sequence.svg)
+
 ## Features by grading area
 
 | Area | What is implemented |
@@ -261,7 +419,7 @@ app/
 data/
   corpus/           25 markdown documents in 5 department folders
   checkpoints/      SQLite checkpointer database
-docs/               DESIGN.md, architecture.mmd/.svg, langgraph.mmd/.svg/.png, adr/
+docs/               DESIGN.md, architecture.mmd/.svg, langgraph.mmd/.svg/.png, sequence.mmd/.svg, adr/
 evals/              ground_truth.json (eval seed: 7 QA cases + 1 RLM case),
                     scored by scripts/run_evals (LangSmith experiment; --dry-run offline)
 ingestion/          chunk, ingest (Pinecone upsert), models
