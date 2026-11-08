@@ -80,3 +80,11 @@ def test_viewer_is_routed_away_from_python_analysis():
     viewer = UserContext(user_id="v", name="Vera", role=Role.viewer, department="retail")
     assert supervisor.route_after_supervisor({"route": route, "user": viewer}) == "retrieval"
     assert supervisor.route_after_supervisor({"route": route, "user": ANALYST}) == "research"
+
+
+def test_finding_without_evidence_is_kept():
+    """Models sometimes omit `evidence`; that must not reject the batch it belongs to."""
+    batch = rlm.BatchAnalysis.model_validate(
+        {"findings": [{"doc_id": "INC-2026-0125", "summary": "s", "category": "c"}]}
+    )
+    assert batch.findings[0].evidence == []

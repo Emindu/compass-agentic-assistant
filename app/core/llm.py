@@ -30,7 +30,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import AIMessage, AIMessageChunk, SystemMessage, convert_to_messages
 from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda, ensure_config
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from tenacity import (
     AsyncRetrying,
     RetryCallState,
@@ -247,11 +247,14 @@ async def ainvoke_structured[SchemaT: BaseModel](
     config: RunnableConfig | None = None,
 ) -> SchemaT:
     """Structured output via function calling; JSON mode + Pydantic parse if the schema is
-    rejected by the provider or the tool-call output cannot be parsed."""
+    rejected by the provider, or the tool-call output cannot be parsed or does not validate
+    (a model that drops a required field gets a second try with the schema spelled out)."""
     try:
         return await _guarded_ainvoke(get_structured_llm(role, schema), messages, role, config)
     except Exception as exc:
-        if not (_is_rejected_request(exc) or isinstance(exc, OutputParserException)):
+        if not (
+            _is_rejected_request(exc) or isinstance(exc, OutputParserException | ValidationError)
+        ):
             raise
         log.warning(
             "structured_output_fallback", role=role, schema=schema.__name__, error=repr(exc)

@@ -11,6 +11,7 @@ from langchain_core.tracers.langchain import LangChainTracer
 from langchain_core.tracers.schemas import Run
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import START, StateGraph
+from pydantic import BaseModel
 
 from app.core import llm
 from app.core.config import get_settings
@@ -167,3 +168,28 @@ async def test_llm_runs_inside_graph_nest_under_the_graph_trace(models):
     assert llm_run.parent_run_id is not None
     metadata = llm_run.extra["metadata"]
     assert metadata["user_id"] == "user" and metadata["llm_role"] == "main"
+
+
+class Answer(BaseModel):
+    text: str
+    sources: list[str]
+
+
+async def test_structured_output_that_fails_validation_falls_back_to_json_mode(models, monkeypatch):
+    """A tool call missing a required field raises a pydantic ValidationError; it gets a
+    JSON-mode retry with the schema spelled out instead of failing the caller."""
+
+    def missing_field(_messages):
+        return Answer.model_validate({"text": "no sources"})  # raises ValidationError
+
+    json_calls: list = []
+
+    def json_mode(messages):
+        json_calls.append(messages)
+        return AIMessage('{"text": "ok", "sources": ["A#01"]}')
+
+    monkeypatch.setattr(llm, "get_structured_llm", lambda _r, _s: RunnableLambda(missing_field))
+    monkeypatch.setattr(llm, "_json_mode_llm", lambda _r: RunnableLambda(json_mode))
+    result = await llm.ainvoke_structured("fast", Answer, "hi")
+    assert result == Answer(text="ok", sources=["A#01"])
+    assert len(json_calls) == 1

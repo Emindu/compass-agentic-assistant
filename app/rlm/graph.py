@@ -44,7 +44,12 @@ class Finding(BaseModel):
     summary: str = Field(description="One sentence: what happened / what the source says")
     root_cause: str | None = Field(default=None, description="Underlying cause, if stated")
     category: str = Field(description="Short normalised label, e.g. 'certificate expiry'")
-    evidence: list[str] = Field(description="Chunk ids supporting this finding")
+    # Defaulted: small models sometimes omit it, and a required field would reject the whole
+    # batch (every finding in it) over one missing list. Ids are filtered against the batch
+    # anyway, so an empty list just means this finding cannot be cited.
+    evidence: list[str] = Field(
+        default_factory=list, description="Chunk ids supporting this finding"
+    )
 
 
 class BatchAnalysis(BaseModel):
