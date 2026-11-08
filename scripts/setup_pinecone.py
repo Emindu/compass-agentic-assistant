@@ -45,8 +45,9 @@ def main() -> int:
 
     for name in wanted:
         desc = pc.describe_index(name)
-        ready = desc.status.ready
-        print(f"{name}: vector_type={desc.vector_type} metric={desc.metric} ready={ready}")
+        # Integrated-inference indexes describe their model under `embed`, not top-level fields.
+        embed = desc.embed
+        print(f"{name}: model={embed.model} metric={embed.metric} ready={desc.status.ready}")
     return 0
 
 
