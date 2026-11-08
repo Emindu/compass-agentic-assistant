@@ -1,11 +1,16 @@
 """LLM factory policy tests with scripted fake models (no network)."""
 
 import asyncio
+from typing import TypedDict
 
 import httpx
 import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
+from langchain_core.tracers.langchain import LangChainTracer
+from langchain_core.tracers.schemas import Run
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import START, StateGraph
 
 from app.core import llm
 from app.core.config import get_settings
@@ -109,3 +114,56 @@ async def test_stream_falls_back_before_first_token(models, monkeypatch):
     models["fast-model"] = ScriptedModel("from fast")
     chunks = [c async for c in llm.astream_llm("main", "hi")]
     assert "".join(c.content for c in chunks) == "from fast"
+
+
+class RecordingTracer(LangChainTracer):
+    """LangSmith tracer that records finished runs instead of sending them. `raise_error`
+    turns tracer bookkeeping failures ("No indexed run ID") into test failures."""
+
+    raise_error = True
+    finished: list[Run] = []
+
+    def _persist_run_single(self, run: Run) -> None:
+        pass
+
+    @staticmethod
+    def _update_run_single(run: Run) -> None:
+        RecordingTracer.finished.append(run)
+
+
+async def test_llm_runs_inside_graph_nest_under_the_graph_trace(models):
+    """Inside a node, the call must extend the node's config, not replace it. Replacing the
+    metadata made LangChain fork the tracer, so every LLM run was ended twice and errored."""
+    models["main-model"] = ScriptedModel("hello")
+    models["fast-model"] = ScriptedModel("unused")
+
+    async def node(_state: dict) -> dict:
+        reply = await llm.ainvoke_llm("main", "hi")
+        return {"answer": reply.content}
+
+    class State(TypedDict, total=False):
+        answer: str
+
+    graph = StateGraph(State)
+    graph.add_node("node", node)
+    graph.add_edge(START, "node")
+    RecordingTracer.finished = []
+    tracer = RecordingTracer(client=object())  # type: ignore[arg-type]
+    config = {
+        "configurable": {"thread_id": "user:t1"},  # scoped id, as the chat route sets it
+        "metadata": {"thread_id": "t1", "user_id": "user"},
+        "callbacks": [tracer],
+        "run_name": "compass_chat",
+    }
+    result = await graph.compile(checkpointer=InMemorySaver()).ainvoke({}, config)
+
+    assert result["answer"] == "hello"
+    runs = {str(r.id): r for r in RecordingTracer.finished}
+    assert len(runs) == len(RecordingTracer.finished), "a run was finished more than once"
+    root = next(r for r in runs.values() if r.parent_run_id is None)
+    assert root.name == "compass_chat"
+    llm_run = next(r for r in runs.values() if r.name == "llm:main")
+    assert llm_run.trace_id == root.trace_id
+    assert llm_run.parent_run_id is not None
+    metadata = llm_run.extra["metadata"]
+    assert metadata["user_id"] == "user" and metadata["llm_role"] == "main"

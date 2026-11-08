@@ -29,7 +29,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import AIMessage, AIMessageChunk, SystemMessage, convert_to_messages
-from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
+from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda, ensure_config
 from pydantic import BaseModel
 from tenacity import (
     AsyncRetrying,
@@ -169,9 +169,17 @@ def _json_mode_llm(role: Role) -> Runnable:
 
 
 def _run_config(role: Role, config: RunnableConfig | None) -> RunnableConfig:
-    """LangSmith metadata on every call: role, primary model, and a readable run name."""
-    cfg: RunnableConfig = dict(config or {})  # type: ignore[assignment]
-    cfg.setdefault("run_name", f"llm:{role}")
+    """LangSmith metadata on every call: role, primary model, and a readable run name.
+
+    Built on `ensure_config`, so inside a graph node the call extends the node's config
+    (callbacks, metadata, tags, configurable) instead of replacing it. A plain dict would
+    drop the inherited metadata while LangChain still inherits `configurable`; LangChain then
+    copies the LangSmith tracer to add `thread_id` back as a default, nested runnables end up
+    with two tracer copies sharing one run map, and every child run is ended twice
+    ("No indexed run ID" warnings, runs detached from the graph trace).
+    """
+    cfg = ensure_config(config)
+    cfg["run_name"] = (config or {}).get("run_name") or f"llm:{role}"
     cfg["metadata"] = {
         **(cfg.get("metadata") or {}),
         "llm_role": role,
