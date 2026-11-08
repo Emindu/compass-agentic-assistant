@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#333333"/>
+    </marker>
+    <marker id="arrowdash" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#777777"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="900" fill="#ffffff"/>
+  <text x="600" y="14" text-anchor="middle" font-size="16" font-weight="bold" fill="#222222">Compass — agentic knowledge assistant for Commercial Bank (POC architecture)</text>
+
+  <!-- ================= Client ================= -->
+  <g>
+    <rect x="40" y="20" width="250" height="110" rx="10" fill="#f2f7f2" stroke="#4c7a4c" stroke-width="2"/>
+    <text x="50" y="38" font-size="14" font-weight="bold" fill="#4c7a4c">Client</text>
+    <rect x="55" y="50" width="220" height="68" rx="6" fill="#ffffff" stroke="#4c7a4c" stroke-width="1.5"/>
+    <text x="165" y="76" text-anchor="middle" font-size="13" font-weight="bold" fill="#222222">Streamlit UI</text>
+    <text x="165" y="94" text-anchor="middle" font-size="11" fill="#444444">chat, sources, approval buttons</text>
+    <text x="165" y="109" text-anchor="middle" font-size="11" fill="#444444">agent activity panel (SSE events)</text>
+  </g>
+
+  <!-- ================= Gateway ================= -->
+  <g>
+    <rect x="330" y="20" width="380" height="110" rx="10" fill="#fbf6ec" stroke="#b3801f" stroke-width="2"/>
+    <text x="340" y="38" font-size="14" font-weight="bold" fill="#b3801f">FastAPI gateway (app/api)</text>
+    <rect x="345" y="50" width="165" height="68" rx="6" fill="#ffffff" stroke="#b3801f" stroke-width="1.5"/>
+    <text x="427" y="76" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">JWT verify (HS256)</text>
+    <text x="427" y="94" text-anchor="middle" font-size="11" fill="#444444">demo-user login</text>
+    <text x="427" y="109" text-anchor="middle" font-size="11" fill="#444444">token-bucket rate limit</text>
+    <rect x="525" y="50" width="170" height="68" rx="6" fill="#ffffff" stroke="#b3801f" stroke-width="1.5"/>
+    <text x="610" y="70" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">SSE endpoints</text>
+    <text x="610" y="86" text-anchor="middle" font-size="11" fill="#444444">POST /chat/stream</text>
+    <text x="610" y="100" text-anchor="middle" font-size="11" fill="#444444">POST /chat/resume (admin)</text>
+    <text x="610" y="114" text-anchor="middle" font-size="10" fill="#666666">GET /chat/history/{id}</text>
+  </g>
+
+  <!-- arrows: client <-> gateway -->
+  <path d="M275,70 L341,70" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="308" y="62" text-anchor="middle" font-size="9" fill="#555555">login</text>
+  <path d="M612,110 C612,126 320,128 222,119" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowdash)"/>
+  <text x="440" y="126" text-anchor="middle" font-size="10" fill="#555555">SSE events</text>
+
+  <!-- ================= Agent graph ================= -->
+  <g>
+    <rect x="40" y="150" width="560" height="470" rx="10" fill="#f0f5fa" stroke="#2b6db1" stroke-width="2"/>
+    <text x="50" y="168" font-size="14" font-weight="bold" fill="#2b6db1">LangGraph StateGraph — compass (app/agents/graph.py)</text>
+
+    <rect x="60" y="176" width="180" height="28" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="150" y="194" text-anchor="middle" font-size="12" fill="#222222">load_memory (reset turn)</text>
+
+    <rect x="60" y="220" width="180" height="40" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="150" y="236" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">input_guard</text>
+    <text x="150" y="251" text-anchor="middle" font-size="10" fill="#444444">patterns — then fast model</text>
+
+    <rect x="60" y="272" width="180" height="40" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="150" y="288" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">supervisor</text>
+    <text x="150" y="303" text-anchor="middle" font-size="10" fill="#444444">typed route decision</text>
+
+    <rect x="60" y="330" width="170" height="36" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="145" y="345" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">retrieval</text>
+    <text x="145" y="359" text-anchor="middle" font-size="10" fill="#444444">hybrid search</text>
+
+    <rect x="260" y="330" width="170" height="36" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="345" y="345" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">research</text>
+    <text x="345" y="359" text-anchor="middle" font-size="10" fill="#444444">RLM subgraph + evidence</text>
+
+    <rect x="450" y="330" width="150" height="36" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="525" y="345" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">tools</text>
+    <text x="525" y="359" text-anchor="middle" font-size="10" fill="#444444">MCP + admin actions</text>
+
+    <rect x="370" y="398" width="180" height="40" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="460" y="414" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">response</text>
+    <text x="460" y="429" text-anchor="middle" font-size="10" fill="#444444">streamed answer + citations</text>
+
+    <rect x="370" y="452" width="180" height="40" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="460" y="468" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">validator</text>
+    <text x="460" y="483" text-anchor="middle" font-size="10" fill="#444444">citations + output guard</text>
+
+    <rect x="370" y="502" width="180" height="28" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="460" y="520" text-anchor="middle" font-size="12" fill="#222222">finalize</text>
+
+    <rect x="370" y="546" width="180" height="40" rx="6" fill="#ffffff" stroke="#2b6db1" stroke-width="1.5"/>
+    <text x="460" y="562" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">update_memory</text>
+    <text x="460" y="577" text-anchor="middle" font-size="10" fill="#444444">rolling summary</text>
+
+    <text x="460" y="608" text-anchor="middle" font-size="11" fill="#555555">END</text>
+  </g>
+
+  <!-- internal graph arrows -->
+  <path d="M150,204 L150,218" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M150,260 L150,270" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M150,312 L150,328" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M150,306 C210,306 300,318 320,328" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M150,306 C260,306 450,310 510,328" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M240,276 C340,246 480,290 440,397" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="372" y="262" text-anchor="middle" font-size="10" fill="#555555">smalltalk / out of scope</text>
+  <path d="M60,242 C38,252 38,560 100,560 L300,560 C340,560 360,545 366,520" fill="none" stroke="#a84040" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="26" y="420" text-anchor="middle" font-size="10" fill="#a84040" transform="rotate(-90 26 420)">blocked — refusal</text>
+  <path d="M145,366 C150,395 260,418 366,418" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M345,366 C360,385 390,393 418,397" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M525,366 C522,378 512,390 506,396" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M450,348 C420,388 250,388 204,370" fill="none" stroke="#333333" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <text x="310" y="382" text-anchor="middle" font-size="10" fill="#555555">also docs</text>
+  <path d="M460,438 L460,450" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M370,478 C342,478 342,414 366,416" fill="none" stroke="#333333" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <text x="298" y="450" text-anchor="middle" font-size="10" fill="#555555">retry &#8804; 2</text>
+  <path d="M460,492 L460,500" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M460,530 L460,544" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M460,586 L460,598" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- gateway -> graph -->
+  <path d="M600,110 C480,135 230,135 158,174" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="330" y="140" text-anchor="middle" font-size="10" fill="#555555">chat message + user (from JWT)</text>
+  <path d="M560,172 C585,150 615,135 638,113" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowdash)"/>
+  <text x="592" y="145" text-anchor="middle" font-size="10" fill="#555555">custom events</text>
+
+  <!-- ================= RLM subgraph ================= -->
+  <g>
+    <rect x="610" y="150" width="550" height="280" rx="10" fill="#f5f0fa" stroke="#7448ad" stroke-width="2"/>
+    <text x="620" y="168" font-size="14" font-weight="bold" fill="#7448ad">RLM research subgraph — rlm_research (app/rlm/graph.py)</text>
+
+    <rect x="650" y="180" width="160" height="44" rx="6" fill="#ffffff" stroke="#7448ad" stroke-width="1.5"/>
+    <text x="730" y="197" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">plan</text>
+    <text x="730" y="212" text-anchor="middle" font-size="10" fill="#444444">code model search plan</text>
+
+    <rect x="650" y="250" width="160" height="44" rx="6" fill="#ffffff" stroke="#7448ad" stroke-width="1.5"/>
+    <text x="730" y="267" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">execute</text>
+    <text x="730" y="282" text-anchor="middle" font-size="10" fill="#444444">sandboxed subprocess</text>
+
+    <rect x="860" y="180" width="180" height="64" rx="6" fill="#ffffff" stroke="#7448ad" stroke-width="1.5"/>
+    <text x="950" y="201" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">analyse_batch &#215;N</text>
+    <text x="950" y="216" text-anchor="middle" font-size="10" fill="#444444">Send fan-out</text>
+    <text x="950" y="231" text-anchor="middle" font-size="10" fill="#444444">fast model per batch</text>
+
+    <rect x="860" y="270" width="180" height="54" rx="6" fill="#ffffff" stroke="#7448ad" stroke-width="1.5"/>
+    <text x="950" y="289" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">reduce</text>
+    <text x="950" y="304" text-anchor="middle" font-size="10" fill="#444444">main model synthesis</text>
+    <text x="950" y="319" text-anchor="middle" font-size="10" fill="#444444">optional follow-up question</text>
+  </g>
+
+  <path d="M730,224 L730,248" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M810,262 C835,258 860,250 884,243" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="845" y="248" text-anchor="middle" font-size="10" fill="#555555">batches</text>
+  <path d="M730,294 C775,304 820,300 854,294" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M950,244 L950,268" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M648,260 C618,252 618,208 646,205" fill="none" stroke="#333333" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <text x="606" y="240" text-anchor="middle" font-size="9" fill="#555555" transform="rotate(-90 606 240)">plan retry</text>
+  <path d="M856,278 C805,245 785,238 750,227" fill="none" stroke="#333333" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <text x="788" y="238" text-anchor="middle" font-size="9" fill="#555555">follow-up, depth &lt; 2</text>
+
+  <!-- research <-> RLM -->
+  <path d="M430,346 C520,320 570,210 646,203" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M880,324 C770,400 640,425 558,421" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowdash)"/>
+  <text x="700" y="410" text-anchor="middle" font-size="10" fill="#555555">synthesis + evidence</text>
+
+  <!-- ================= Tools ================= -->
+  <g>
+    <rect x="610" y="460" width="550" height="160" rx="10" fill="#faf0f0" stroke="#a84040" stroke-width="2"/>
+    <text x="620" y="478" font-size="14" font-weight="bold" fill="#a84040">Tools (app/tools)</text>
+
+    <rect x="650" y="495" width="190" height="50" rx="6" fill="#ffffff" stroke="#a84040" stroke-width="1.5"/>
+    <text x="745" y="513" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">MCP client</text>
+    <text x="745" y="530" text-anchor="middle" font-size="10" fill="#444444">role re-checked, args validated</text>
+
+    <rect x="880" y="495" width="260" height="50" rx="6" fill="#ffffff" stroke="#a84040" stroke-width="1.5"/>
+    <text x="1010" y="512" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">FastMCP server — compass-directory</text>
+    <text x="1010" y="530" text-anchor="middle" font-size="10" fill="#444444">lookup_employee &#183; get_service_status &#183; list_open_incidents</text>
+
+    <rect x="650" y="565" width="190" height="40" rx="6" fill="#ffffff" stroke="#a84040" stroke-width="1.5"/>
+    <text x="745" y="581" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">admin tools</text>
+    <text x="745" y="596" text-anchor="middle" font-size="10" fill="#444444">reindex_department &#183; revoke_document</text>
+
+    <rect x="880" y="565" width="260" height="40" rx="6" fill="#ffffff" stroke="#a84040" stroke-width="1.5"/>
+    <text x="1010" y="581" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">approval: interrupt() &#8594; Approve / Reject</text>
+    <text x="1010" y="596" text-anchor="middle" font-size="10" fill="#444444">resolved via POST /chat/resume (admin only)</text>
+  </g>
+
+  <path d="M840,520 L876,520" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="852" y="512" text-anchor="middle" font-size="9" fill="#555555">stdio</text>
+  <path d="M560,366 C620,420 690,470 742,492" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M540,368 C560,470 600,575 646,584" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M1140,578 C1195,570 1198,80 702,76" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowdash)"/>
+  <text x="1176" y="330" text-anchor="middle" font-size="10" fill="#555555" transform="rotate(-90 1176 330)">Command(resume)</text>
+
+  <!-- ================= Data & models ================= -->
+  <g>
+    <rect x="40" y="650" width="560" height="200" rx="10" fill="#eef7f5" stroke="#23857a" stroke-width="2"/>
+    <text x="50" y="668" font-size="14" font-weight="bold" fill="#23857a">Data &amp; models</text>
+    <rect x="60" y="685" width="240" height="85" rx="6" fill="#ffffff" stroke="#23857a" stroke-width="1.5"/>
+    <text x="180" y="704" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">Pinecone</text>
+    <text x="180" y="720" text-anchor="middle" font-size="10" fill="#444444">compass-dense &#183; llama-text-embed-v2</text>
+    <text x="180" y="736" text-anchor="middle" font-size="9" fill="#444444">compass-sparse &#183; pinecone-sparse-english-v0</text>
+    <text x="180" y="752" text-anchor="middle" font-size="10" fill="#444444">namespace per dept &#183; access_rank filter</text>
+    <rect x="60" y="785" width="240" height="50" rx="6" fill="#ffffff" stroke="#23857a" stroke-width="1.5"/>
+    <text x="180" y="805" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">BM25 fallback (rank_bm25)</text>
+    <text x="180" y="823" text-anchor="middle" font-size="10" fill="#444444">same access filters, local</text>
+    <rect x="330" y="685" width="250" height="85" rx="6" fill="#ffffff" stroke="#23857a" stroke-width="1.5"/>
+    <text x="455" y="704" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">Mistral models</text>
+    <text x="455" y="720" text-anchor="middle" font-size="10" fill="#444444">main &#183; mistral-large-latest</text>
+    <text x="455" y="736" text-anchor="middle" font-size="10" fill="#444444">fast &#183; mistral-small-latest</text>
+    <text x="455" y="752" text-anchor="middle" font-size="10" fill="#444444">code &#183; codestral-latest</text>
+    <rect x="330" y="785" width="250" height="50" rx="6" fill="#ffffff" stroke="#23857a" stroke-width="1.5"/>
+    <text x="455" y="805" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">data/corpus</text>
+    <text x="455" y="823" text-anchor="middle" font-size="10" fill="#444444">markdown + YAML front matter</text>
+  </g>
+
+  <path d="M150,366 C150,480 150,600 150,682" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="136" y="545" text-anchor="middle" font-size="10" fill="#555555" transform="rotate(-90 136 545)">hybrid search</text>
+  <path d="M180,770 L180,783" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowdash)"/>
+  <text x="190" y="782" text-anchor="start" font-size="9" fill="#555555">index down / FAULT_PINECONE</text>
+  <path d="M328,810 L304,810" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M455,683 L455,624" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowdash)"/>
+  <text x="465" y="650" text-anchor="start" font-size="10" fill="#555555">all prompts</text>
+
+  <!-- ================= Observability ================= -->
+  <g>
+    <rect x="640" y="650" width="520" height="200" rx="10" fill="#f4f4f4" stroke="#555555" stroke-width="2"/>
+    <text x="650" y="668" font-size="14" font-weight="bold" fill="#555555">Observability &amp; memory</text>
+    <rect x="660" y="685" width="240" height="60" rx="6" fill="#ffffff" stroke="#555555" stroke-width="1.5"/>
+    <text x="780" y="706" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">LangSmith</text>
+    <text x="780" y="722" text-anchor="middle" font-size="10" fill="#444444">runs tagged user / role / thread</text>
+    <rect x="660" y="760" width="240" height="60" rx="6" fill="#ffffff" stroke="#555555" stroke-width="1.5"/>
+    <text x="780" y="781" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">structlog JSON logs</text>
+    <text x="780" y="799" text-anchor="middle" font-size="10" fill="#444444">request_id on every line</text>
+    <rect x="930" y="685" width="210" height="135" rx="6" fill="#ffffff" stroke="#555555" stroke-width="1.5"/>
+    <text x="1035" y="708" text-anchor="middle" font-size="12" font-weight="bold" fill="#222222">SQLite checkpointer</text>
+    <text x="1035" y="726" text-anchor="middle" font-size="10" fill="#444444">data/checkpoints/compass.sqlite</text>
+    <text x="1035" y="744" text-anchor="middle" font-size="10" fill="#444444">per user-scoped thread_id</text>
+    <text x="1035" y="762" text-anchor="middle" font-size="10" fill="#444444">holds memory + interrupts</text>
+  </g>
+
+  <path d="M520,588 C600,635 700,662 776,681" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowdash)"/>
+  <text x="668" y="634" text-anchor="middle" font-size="10" fill="#555555">traces / logs</text>
+  <path d="M460,588 C460,632 500,645 560,645 L950,645 C1000,645 1020,662 1032,681" fill="none" stroke="#777777" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowdash)"/>
+  <text x="770" y="640" text-anchor="middle" font-size="10" fill="#555555">checkpoints</text>
+
+  <text x="40" y="880" font-size="10" fill="#888888">Node names match app/agents/graph.py and app/rlm/graph.py. Mermaid source: docs/architecture.mmd. Solid arrows = request path; dashed = side channels and degraded paths.</text>
+</svg>

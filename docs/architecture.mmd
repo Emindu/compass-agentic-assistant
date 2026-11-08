@@ -1,0 +1,105 @@
+flowchart TB
+    subgraph client["Client"]
+        UI["Streamlit UI<br/>ui/streamlit_app.py<br/>chat, sources, approval buttons<br/>agent activity panel"]
+    end
+
+    subgraph gateway["FastAPI gateway (app/api)"]
+        AUTH["POST /auth/login<br/>JWT HS256, demo users"]
+        SSE["POST /chat/stream · /chat/resume<br/>JWT verify + rate limit<br/>SSE typed events + request ids"]
+    end
+
+    UI -->|"login"| AUTH
+    AUTH -.->|"JWT"| UI
+    UI -->|"chat message + bearer token"| SSE
+
+    subgraph graph["LangGraph StateGraph: compass (app/agents/graph.py)"]
+        LM["load_memory<br/>reset per-turn state"]
+        IG["input_guard<br/>patterns, then fast model"]
+        SUP["supervisor<br/>typed route decision"]
+        RET["retrieval<br/>hybrid search"]
+        RSC["research<br/>RLM subgraph + evidence"]
+        TOOLS["tools<br/>MCP lookups + admin actions"]
+        RESP["response<br/>streamed answer + citations"]
+        VAL["validator<br/>citation check + output guard"]
+        FIN["finalize"]
+        UM["update_memory<br/>rolling summary"]
+
+        LM --> IG
+        IG -->|"blocked"| FIN
+        IG -->|"allowed"| SUP
+        SUP -->|"docs"| RET
+        SUP -->|"research"| RSC
+        SUP -->|"tools"| TOOLS
+        SUP -->|"smalltalk / out of scope"| RESP
+        TOOLS -->|"also needs docs"| RET
+        TOOLS --> RESP
+        RET --> RESP
+        RESP --> VAL
+        VAL -->|"invalid, retries left"| RESP
+        VAL -->|"valid / out of retries"| FIN
+        FIN --> UM
+    end
+
+    SSE -->|"messages + user (JWT context)"| LM
+    UM -.->|"custom events (SSE)"| SSE
+
+    subgraph rlm["RLM research subgraph: rlm_research (app/rlm/graph.py)"]
+        PLAN["plan<br/>code model writes Python search plan"]
+        EXE["execute<br/>sandboxed subprocess"]
+        AB["analyse_batch ×N<br/>Send fan-out, fast model per batch"]
+        RED["reduce<br/>main model synthesis, optional follow-up"]
+
+        PLAN --> EXE
+        EXE -->|"plan failed, retry left"| PLAN
+        EXE -->|"batches"| AB
+        EXE -->|"no batches / failed"| RED
+        AB --> RED
+        RED -->|"follow-up, depth &lt; 2"| PLAN
+    end
+
+    RSC -.->|"run plan"| PLAN
+    RED -.->|"synthesis + evidence"| RESP
+
+    subgraph toolsgrp["Tools"]
+        MCP["MCP client<br/>app/tools/mcp_client.py"]
+        MCPS["FastMCP server: compass-directory<br/>mcp_server/server.py<br/>lookup_employee · get_service_status · list_open_incidents"]
+        ADM["admin tools<br/>reindex_department · revoke_document"]
+        APR["approval: interrupt()<br/>Approve / Reject<br/>POST /chat/resume (admin only)"]
+
+        MCP -->|"stdio"| MCPS
+        ADM --> APR
+    end
+
+    TOOLS --> MCP
+    TOOLS --> ADM
+    APR -.->|"Command(resume)"| SSE
+
+    subgraph data["Data & models"]
+        PC["Pinecone<br/>compass-dense (llama-text-embed-v2)<br/>compass-sparse (pinecone-sparse-english-v0)<br/>namespaces per department, access_rank filter"]
+        BM25["BM25 fallback<br/>rank_bm25 over the same chunks,<br/>same access filters"]
+        CORPUS["data/corpus<br/>25 markdown documents, YAML front matter"]
+        MODELS["Mistral models<br/>main: mistral-large-latest<br/>fast: mistral-small-latest<br/>code: codestral-latest"]
+    end
+
+    RET --> PC
+    PC -.->|"index down / FAULT_PINECONE"| BM25
+    CORPUS --> BM25
+    SUP -.-> MODELS
+    IG -.-> MODELS
+    RESP -.-> MODELS
+    VAL -.-> MODELS
+    PLAN -.-> MODELS
+    AB -.-> MODELS
+    RED -.-> MODELS
+
+    subgraph obs["Observability & memory"]
+        LS["LangSmith<br/>runs tagged user / role / thread"]
+        LOGS["structlog JSON logs<br/>request_id on every line"]
+        DB[("SQLite checkpointer<br/>data/checkpoints/compass.sqlite<br/>per user-scoped thread_id")]
+    end
+
+    graph -.->|"traces"| LS
+    SSE -.->|"traces"| LS
+    graph -.-> LOGS
+    LM --> DB
+    UM --> DB
