@@ -16,11 +16,20 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 from app.retrieval.models import RetrievedChunk
+from app.security.input_guard import GuardVerdict
 from app.security.rbac import UserContext
 from ingestion.models import Department
 
-Intent = Literal["knowledge_qa", "deep_research", "analytics", "smalltalk", "out_of_scope"]
-AgentName = Literal["retrieval", "research", "analysis"]
+Intent = Literal[
+    "knowledge_qa",
+    "deep_research",
+    "analytics",
+    "directory_lookup",
+    "admin_action",
+    "smalltalk",
+    "out_of_scope",
+]
+AgentName = Literal["retrieval", "research", "analysis", "tools"]
 
 
 class RouteDecision(BaseModel):
@@ -84,9 +93,11 @@ class AgentState(TypedDict, total=False):
 
     # Per turn
     route: RouteDecision | None
+    guard: GuardVerdict | None
     retrieved: list[RetrievedChunk]
     retrieval_notes: list[str]
     research: ResearchOutcome | None
+    tool_results: list[dict]
     draft_answer: str | None
     validation: ValidationResult | None
     response_attempts: int

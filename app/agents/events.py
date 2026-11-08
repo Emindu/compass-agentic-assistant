@@ -20,6 +20,7 @@ EventType = Literal[
     "memory",
     "validation",
     "guardrail",
+    "approval",
     "token",
     "answer",
     "error",

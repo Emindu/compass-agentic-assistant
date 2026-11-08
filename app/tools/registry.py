@@ -49,13 +49,20 @@ _TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="lookup_employee",
         permission="mcp",
-        description="Find employees by name, employee id or team; returns contact details.",
+        description=(
+            "Find employees by ONE short term: a person's name, employee id or team id "
+            "(e.g. 'Nimal', 'payments-sre'); returns contact details and on-call flag."
+        ),
         args_model=LookupEmployeeArgs,
     ),
     ToolSpec(
         name="get_service_status",
         permission="mcp",
-        description="Get the current status of a service (operational, degraded, outage).",
+        description=(
+            "Status of one service by id (e.g. 'card-switch-connector', 'cefts-adapter'): "
+            "operational/degraded/outage, owner team, on-call contact, last incident, runbook. "
+            "Use this for 'who is on call for <service>'."
+        ),
         args_model=GetServiceStatusArgs,
     ),
     ToolSpec(

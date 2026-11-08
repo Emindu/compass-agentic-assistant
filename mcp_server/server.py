@@ -80,22 +80,35 @@ def lookup_employee(query: str) -> list[dict]:
     return matches
 
 
-def get_service_status(service: str) -> dict:
-    """Exact (case-insensitive) service name lookup.
+def _service_key(value: str) -> str:
+    """'Card Switch Connector', 'card_switch_connector' and 'card-switch-connector' are one service:
+    models paraphrase ids, so match on a normalised key instead of failing on spelling."""
+    return "-".join(value.casefold().replace("_", " ").replace("-", " ").split())
 
-    Returns an error dict rather than raising so the model can react to the miss.
+
+def get_service_status(service: str) -> dict:
+    """Case/spacing-insensitive service lookup, including the owning team's on-call contact.
+
+    The on-call join answers "who is on call for X" in one call; a miss returns the known
+    service ids so the model can correct itself instead of guessing.
     """
-    name = _validate_query(service)
+    key = _service_key(_validate_query(service))
     for svc in _SERVICES:
-        if svc["service"].casefold() == name.casefold():
+        if _service_key(svc["service"]) == key:
+            on_call = [
+                {"name": e["name"], "email": e["email"], "title": e["title"]}
+                for e in _EMPLOYEES
+                if e["team"] == svc["owner_team"] and e["on_call"]
+            ]
             return {
                 "service": svc["service"],
                 "owner_team": svc["owner_team"],
                 "status": svc["status"],
                 "last_incident": svc["last_incident"],
                 "runbook": svc["runbook"],
+                "on_call": on_call,
             }
-    return {"error": "unknown service"}
+    return {"error": "unknown service", "known_services": [s["service"] for s in _SERVICES]}
 
 
 def list_open_incidents(department: str | None = None) -> list[dict]:

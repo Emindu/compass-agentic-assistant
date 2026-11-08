@@ -104,3 +104,12 @@ async def test_memory_persists_across_turns(monkeypatch):
     loaded = next(e for e in events if e["type"] == "memory" and e["node"] == "load_memory")
     assert loaded["data"]["previous_turns"] == 1
     assert state["errors"] == []  # per-turn fields reset
+
+
+def test_supervisor_keeps_only_departments_named_in_the_message():
+    from app.agents.nodes.supervisor import _named_departments
+
+    q = "How do I rotate the card switch certificate?"
+    assert _named_departments(["retail"], q) is None
+    assert _named_departments(["payments", "retail"], "payments outages last year") == ["payments"]
+    assert _named_departments(None, q) is None

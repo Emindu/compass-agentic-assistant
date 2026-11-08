@@ -17,6 +17,10 @@ Intents:
 - deep_research: needs many documents analysed together (e.g. "summarise all incidents of a
   type over a period", "find recurring root causes"). agents = ["research"].
 - analytics: needs counting or structured analysis of retrieved data. agents = ["analysis"].
+- directory_lookup: people, on-call, live service status or open incidents (directory data,
+  not documents). agents = ["tools"]; add "retrieval" too when documents also help.
+- admin_action: maintenance on the knowledge base itself (re-index a department, revoke a
+  document). agents = ["tools"]. Requires human approval before it runs.
 - smalltalk: greetings, thanks, questions about what you can do. agents = [].
 - out_of_scope: unrelated to the bank's internal knowledge, or a request for financial
   advice. agents = [].
@@ -59,6 +63,19 @@ Reply briefly. For greetings or capability questions, explain that you answer qu
 the bank's internal documents (policies, runbooks, incidents, architecture, specs) with
 citations. For out-of-scope requests or financial advice, politely decline and say what you can
 help with. The user is {{name}} ({{role}})."""
+
+TOOLS = f"""{BRAND}
+
+You are the tools agent. Given the employee's latest question, choose up to 3 tool calls
+from the catalogue below, or none. Rules:
+- Only use catalogue names, and only arguments that match each tool's schema.
+- Choose the fewest calls that answer the question. Explain each call briefly in `why`.
+- Admin actions will be shown to a human for approval before they run.
+
+Catalogue:
+{{catalogue}}
+
+The user is {{name}} ({{role}}, {{department}})."""
 
 SUMMARISE = """Summarise this conversation between an employee and the Compass assistant in at
 most 5 bullet points. Keep: the employee's goals, documents or incidents discussed (with ids),

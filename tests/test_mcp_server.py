@@ -53,13 +53,23 @@ def test_lookup_employee_rejects_bad_input(bad):
 
 def test_get_service_status_known_service():
     status = server.get_service_status("card-switch-connector")
-    assert status == {
+    assert {
+        k: status[k] for k in ("service", "owner_team", "status", "last_incident", "runbook")
+    } == {
         "service": "card-switch-connector",
         "owner_team": "payments-sre",
         "status": "operational",
         "last_incident": "INC-2026-0819",
         "runbook": "RB-PAY-003-V2",
     }
+    # on-call contact joined from the owner team; work fields only
+    assert [p["name"] for p in status["on_call"]] == ["Nimal Perera"]
+    assert all(set(p) == {"name", "email", "title"} for p in status["on_call"])
+
+
+def test_get_service_status_tolerates_paraphrased_ids():
+    assert server.get_service_status("Card Switch Connector")["service"] == "card-switch-connector"
+    assert server.get_service_status("card_switch_connector")["service"] == "card-switch-connector"
 
 
 def test_get_service_status_is_case_insensitive():
@@ -70,7 +80,9 @@ def test_get_service_status_is_case_insensitive():
 
 def test_get_service_status_unknown_service_returns_error_dict():
     # An error dict instead of an exception: the model can react to the miss.
-    assert server.get_service_status("swift-gateway") == {"error": "unknown service"}
+    miss = server.get_service_status("swift-gateway")
+    assert miss["error"] == "unknown service"
+    assert "card-switch-connector" in miss["known_services"]  # lets the model self-correct
 
 
 def test_list_open_incidents_returns_only_unresolved():
