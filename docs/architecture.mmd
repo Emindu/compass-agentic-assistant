@@ -12,7 +12,7 @@ flowchart TB
     AUTH -.->|"JWT"| UI
     UI -->|"chat message + bearer token"| SSE
 
-    subgraph graph["LangGraph StateGraph: compass (app/agents/graph.py)"]
+    subgraph agentgraph["LangGraph StateGraph: compass (app/agents/graph.py)"]
         LM["load_memory<br/>reset per-turn state"]
         IG["input_guard<br/>patterns, then fast model"]
         SUP["supervisor<br/>typed route decision"]
@@ -98,8 +98,8 @@ flowchart TB
         DB[("SQLite checkpointer<br/>data/checkpoints/compass.sqlite<br/>per user-scoped thread_id")]
     end
 
-    graph -.->|"traces"| LS
+    agentgraph -.->|"traces"| LS
     SSE -.->|"traces"| LS
-    graph -.-> LOGS
+    agentgraph -.-> LOGS
     LM --> DB
     UM --> DB
