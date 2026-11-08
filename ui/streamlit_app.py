@@ -6,9 +6,11 @@ Deliberately thin — it only wires session state and layout; all real logic liv
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,7 @@ import streamlit as st
 
 from ui import activity
 from ui.activity import Step, TurnState
-from ui.client import DEMO_USERS, ApiError, CompassClient
+from ui.client import DEMO_USERS, ApiError, CompassClient, StreamEvent
 
 RENDER_INTERVAL_S = 0.15
 ACTIVITY_HEIGHT_PX = 640
@@ -136,6 +138,50 @@ def _show_api_error(exc: ApiError, base_url: str) -> None:
         st.error(exc.message or "The request failed.")
 
 
+def _stream_events(
+    events: Iterator[StreamEvent], state: TurnState, answer_box: Any, live_panel: Any
+) -> None:
+    """Shared render loop for every SSE source (chat and approval resume): fold events into
+    the turn state, live-update the answer text and throttle the activity panel redraws."""
+    last_render = 0.0
+    for event in events:
+        state = activity.apply(state, event)
+        cursor = "" if state.done or event.type == "answer" else " ▌"
+        answer_box.markdown(state.answer_text + cursor)
+        now = time.monotonic()
+        if event.type in LIVE_EVENTS or now - last_render >= RENDER_INTERVAL_S:
+            with live_panel.container():
+                _render_steps(state.steps)
+            last_render = now
+
+
+def _finish_turn(state: TurnState, answer_box: Any, live_panel: Any) -> None:
+    """Store the completed turn and resync the layout (past-turn expanders, thread caption)."""
+    if state.steps:
+        answer_box.markdown(state.answer_text or "*(no answer)*")
+        with live_panel.container():
+            _render_steps(state.steps)
+        st.session_state.turns.append(state)
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": state.answer_text
+                or (
+                    "⏸️ Waiting for an admin to approve this action."
+                    if state.pending_approval
+                    else ""
+                ),
+                "citations": state.citations,
+                "notes": state.notes,
+                "errors": state.errors,
+            }
+        )
+        if state.thread_id:
+            st.session_state.thread_id = state.thread_id
+        # Rerun so the just-finished turn moves into the history panels.
+        st.rerun()
+
+
 def _run_turn(
     client: CompassClient,
     prompt: str,
@@ -143,7 +189,7 @@ def _run_turn(
     answer_col: Any,
     live_panel: Any,
 ) -> None:
-    """Stream one turn, live-updating both the chat and the activity panel."""
+    """Stream one chat turn, live-updating both the chat and the activity panel."""
     st.session_state.messages.append({"role": "user", "content": prompt})
     answer_col.chat_message("user").markdown(prompt)
 
@@ -152,38 +198,77 @@ def _run_turn(
         answer_box = st.empty()
 
     state = TurnState()
-    last_render = 0.0
     try:
-        for event in client.stream_chat(prompt, st.session_state.thread_id):
-            state = activity.apply(state, event)
-            cursor = "" if state.done or event.type == "answer" else " ▌"
-            answer_box.markdown(state.answer_text + cursor)
-            now = time.monotonic()
-            if event.type in LIVE_EVENTS or now - last_render >= RENDER_INTERVAL_S:
-                with live_panel.container():
-                    _render_steps(state.steps)
-                last_render = now
+        _stream_events(
+            client.stream_chat(prompt, st.session_state.thread_id), state, answer_box, live_panel
+        )
     except ApiError as exc:
         _show_api_error(exc, base_url)
     finally:
-        if state.steps:
-            answer_box.markdown(state.answer_text or "*(no answer)*")
-            with live_panel.container():
-                _render_steps(state.steps)
-            st.session_state.turns.append(state)
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": state.answer_text,
-                    "citations": state.citations,
-                    "notes": state.notes,
-                    "errors": state.errors,
-                }
+        _finish_turn(state, answer_box, live_panel)
+
+
+def _resume_turn(
+    client: CompassClient,
+    thread_id: str,
+    approved: bool,
+    base_url: str,
+    answer_col: Any,
+    live_panel: Any,
+) -> None:
+    """Continue the paused turn with the human's decision, as a new assistant turn."""
+    name = str((client.user or {}).get("name") or "admin")
+    caption = f"{'Approved' if approved else 'Rejected'} by {name}"
+    st.session_state.messages.append({"role": "user", "content": caption})
+    answer_col.chat_message("user").caption(caption)
+
+    with answer_col.chat_message("assistant"):
+        answer_box = st.empty()
+
+    state = TurnState()
+    state.thread_id = thread_id
+    try:
+        _stream_events(client.resume_chat(thread_id, approved), state, answer_box, live_panel)
+    except ApiError as exc:
+        _show_api_error(exc, base_url)
+    finally:
+        # The decision is made; the old turn must not keep offering the buttons.
+        turns = st.session_state.turns
+        if turns:
+            turns[-1].pending_approval = None
+        _finish_turn(state, answer_box, live_panel)
+
+
+def _render_approval(client: CompassClient, answer_col: Any, live_panel: Any) -> None:
+    """When the last turn paused for human approval, show the decision box; admins only."""
+    turns = st.session_state.turns
+    pending = turns[-1].pending_approval if turns else None
+    if not pending:
+        return
+    thread_id = st.session_state.thread_id or str(pending.get("thread_id") or "")
+    if not thread_id:
+        return
+    is_admin = bool(client.user) and str(client.user.get("role")) == "admin"
+    args = pending.get("args") or {}
+    with answer_col:
+        st.info(
+            f"⏸️ **Approval required:** {pending.get('action', 'a tool action')}\n\n"
+            f"Tool: `{pending.get('tool', '?')}` — args: "
+            f"`{json.dumps(args, default=str) if isinstance(args, dict) else args}`"
+        )
+        approved = st.button(
+            "Approve", key=f"approve:{thread_id}", type="primary", disabled=not is_admin
+        )
+        rejected = st.button("Reject", key=f"reject:{thread_id}", disabled=not is_admin)
+        if approved or rejected:
+            _resume_turn(
+                client,
+                thread_id,
+                approved,
+                st.session_state.base_url or "http://localhost:8000",
+                answer_col,
+                live_panel,
             )
-            if state.thread_id:
-                st.session_state.thread_id = state.thread_id
-            # Resync layout (past-turn expanders, thread caption) now that state is stored.
-            st.rerun()
 
 
 def main() -> None:
@@ -211,6 +296,9 @@ def main() -> None:
         if turns:  # keep the last completed turn visible between questions
             with live_panel.container():
                 _render_steps(turns[-1].steps)
+
+    # Below the conversation: if the last turn paused on an approval, offer the decision.
+    _render_approval(client, chat_col, live_panel)
 
     prompt = st.chat_input("Ask Compass…")
     if prompt:

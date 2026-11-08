@@ -54,6 +54,9 @@ class TurnState:
     research_plan: str | None = None
     hits: list[dict[str, Any]] = field(default_factory=list)
     node_timings: dict[str, float] = field(default_factory=dict)
+    # Approval payload (tool, args, action, thread_id…) from the `approval` event; the UI
+    # shows Approve/Reject buttons while this is set on the last turn.
+    pending_approval: dict[str, Any] | None = None
 
 
 def apply(state: TurnState, event: StreamEvent) -> TurnState:
@@ -206,9 +209,14 @@ def _handle_tool_call(state: TurnState, node: str, data: dict[str, Any]) -> None
         "failed": f"💥 {tool} failed",
         "denied": f"⛔ {tool} denied",
         "pending_approval": f"⏸️ {tool} awaiting approval",
+        "rejected": f"🚫 {tool} rejected",
     }
     title = titles.get(status, f"⚙️ {tool} ({status})")
     detail = str(data.get("reason") or data.get("error") or "") or None
+    if status == "pending_approval":
+        # The action sentence (not raw args) belongs in the panel; full args show via the
+        # `approval` event / its step.
+        detail = str(data.get("action") or data.get("why") or "") or None
     table = None
     if status == "ok":
         calls = [c for c in data.get("primitive_calls") or [] if isinstance(c, dict)]
@@ -310,6 +318,31 @@ def _handle_validation(state: TurnState, node: str, data: dict[str, Any]) -> Non
 
 
 def _handle_guardrail(state: TurnState, node: str, data: dict[str, Any]) -> None:
+    """Typed guardrail events; the `stage`-free shape stays as the generic fallback."""
+    stage = str(data.get("stage") or "")
+    if stage == "input":
+        if bool(data.get("allowed")):
+            title = "🛡️ Input guard: allowed"
+            status = "ok"
+        else:
+            category = data.get("category", "?")
+            title = f"🛡️ Input guard: blocked ({category}, {data.get('layer', '?')})"
+            status = "error"
+        state.steps.append(Step(node=node, icon="🛡️", title=title, status=status))
+        return
+    if stage == "retrieved_text":
+        chunks = [c for c in data.get("chunks") or []]
+        title = f"🧼 Sanitised {len(chunks)} retrieved chunk(s)"
+        findings = ", ".join(str(f) for f in data.get("findings") or [])
+        state.steps.append(
+            Step(node=node, icon="🧼", title=title, detail=findings or None, status="ok")
+        )
+        return
+    if stage == "output":
+        issues = [i for i in data.get("issues") or [] if isinstance(i, dict)]
+        codes = ", ".join(str(i.get("code") or "?") for i in issues) or "no issues"
+        state.steps.append(Step(node=node, icon="🛡️", title=f"🛡️ Output guard: {codes}", status="ok"))
+        return
     action = str(data.get("action") or "intervened")
     state.steps.append(
         Step(
@@ -320,6 +353,26 @@ def _handle_guardrail(state: TurnState, node: str, data: dict[str, Any]) -> None
             status="ok",
         )
     )
+
+
+def _handle_approval(state: TurnState, node: str, data: dict[str, Any]) -> None:
+    """The backend could not finish the turn without a human decision; hold the request."""
+    action = str(data.get("action") or "requested tool action")
+    tool = str(data.get("tool") or "tool")
+    try:
+        args_json = json.dumps(data.get("args") or {}, default=str)
+    except (TypeError, ValueError):
+        args_json = str(data.get("args") or {})
+    state.steps.append(
+        Step(
+            node=node,
+            icon="⏸️",
+            title=f"⏸️ Approval required: {action}",
+            detail=f"{tool} {_snip(args_json, 200)}",
+            status="ok",
+        )
+    )
+    state.pending_approval = dict(data)
 
 
 def _handle_token(state: TurnState, node: str, data: dict[str, Any]) -> None:
@@ -391,6 +444,7 @@ _HANDLERS = {
     "research": _handle_research,
     "validation": _handle_validation,
     "guardrail": _handle_guardrail,
+    "approval": _handle_approval,
     "token": _handle_token,
     "answer": _handle_answer,
     "error": _handle_error,

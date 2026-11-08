@@ -108,19 +108,15 @@ class CompassClient:
         self._token = None
         self._user = None
 
-    def stream_chat(self, message: str, thread_id: str | None) -> Iterator[StreamEvent]:
-        """Yield decoded SSE events for one chat turn.
-
-        Non-200 responses raise `ApiError` (body is read first); individual events with
-        malformed JSON are skipped rather than aborting the stream.
-        """
+    def _sse_stream(self, method: str, url: str, payload: dict[str, Any]) -> Iterator[StreamEvent]:
+        """Yield decoded SSE events for any streaming endpoint (chat and resume)."""
         token = self._require_token()
         try:
             with connect_sse(
                 self._client,
-                "POST",
-                "/chat/stream",
-                json={"message": message, "thread_id": thread_id},
+                method,
+                url,
+                json=payload,
                 headers={"Authorization": f"Bearer {token}"},
             ) as source:
                 if source.response.status_code != 200:
@@ -131,6 +127,22 @@ class CompassClient:
                         yield event
         except httpx.TransportError as exc:
             raise ApiError(0, "unreachable", f"Cannot reach the Compass API: {exc}") from exc
+
+    def stream_chat(self, message: str, thread_id: str | None) -> Iterator[StreamEvent]:
+        """Yield decoded SSE events for one chat turn.
+
+        Non-200 responses raise `ApiError` (body is read first); individual events with
+        malformed JSON are skipped rather than aborting the stream.
+        """
+        return self._sse_stream(
+            "POST", "/chat/stream", {"message": message, "thread_id": thread_id}
+        )
+
+    def resume_chat(self, thread_id: str, approved: bool) -> Iterator[StreamEvent]:
+        """Continue a thread paused on a human approval with the chosen decision."""
+        return self._sse_stream(
+            "POST", "/chat/resume", {"thread_id": thread_id, "approved": approved}
+        )
 
     def history(self, thread_id: str) -> dict[str, Any]:
         """Fetch a stored conversation, so the UI can rehydrate a thread after reload."""
