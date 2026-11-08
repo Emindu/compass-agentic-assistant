@@ -1,11 +1,11 @@
-"""FastAPI entrypoint: middleware, error handling and health check.
-
-Routes for chat/auth are added in later blocks; this module only owns cross-cutting concerns.
-"""
+"""FastAPI entrypoint: lifespan (graph + checkpointer), middleware, error handling, routes."""
 
 import time
 import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -14,11 +14,47 @@ from app.core.config import get_settings
 from app.core.errors import AppError, RateLimitError
 from app.core.logging import configure_logging, get_logger, request_id_var
 
+# LangSmith and the LLM SDKs read os.environ directly, so export .env before anything else.
+load_dotenv()
+
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver  # noqa: E402
+
+from app.agents.graph import build_graph  # noqa: E402
+from app.api import auth  # noqa: E402
+from app.api.routes import chat  # noqa: E402
+from app.retrieval.pinecone_store import get_store  # noqa: E402
+
 settings = get_settings()
 configure_logging(settings.log_level)
 log = get_logger(__name__)
 
-app = FastAPI(title=f"{settings.app_name} API", version="0.1.0")
+CHECKPOINT_DB = Path("data/checkpoints/compass.sqlite")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Open the checkpointer for the app's lifetime and warm Pinecone connections, so the first
+    user request doesn't pay about 4 s of connection setup."""
+    CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
+    async with AsyncSqliteSaver.from_conn_string(str(CHECKPOINT_DB)) as checkpointer:
+        app.state.graph = build_graph(checkpointer)
+        try:
+            store = get_store()
+            for index in (settings.pinecone_dense_index, settings.pinecone_sparse_index):
+                await store.search(index, "warm up", ["corporate"], 1, {"access_rank": 0})
+            log.info("pinecone_warm")
+        except Exception as exc:  # degraded mode is still usable; don't block start-up
+            log.warning("pinecone_warmup_failed", error=repr(exc))
+        yield
+        try:
+            await get_store().aclose()
+        except Exception:
+            pass
+
+
+app = FastAPI(title=f"{settings.app_name} API", version="0.1.0", lifespan=lifespan)
+app.include_router(auth.router)
+app.include_router(chat.router)
 
 
 @app.middleware("http")
