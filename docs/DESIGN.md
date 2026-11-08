@@ -17,8 +17,7 @@ Deliberately **cut** from the POC, with reasons:
 | --- | --- |
 | Long-term per-user memory (cross-session profile/preferences) | Conversation memory (SQLite checkpointer) covers the demo requirements; a long-term store adds schema, retention policy and PII review that a POC cannot validate. Next step after the assessment. |
 | Answer-quality feedback loop (thumbs up/down, guardrail tuning from real traffic) | No real users yet; feedback with no traffic is unmeasurable. |
-| Learned reranking (cross-encoder over fused candidates) | The corpus is 25 documents; max-normalised fusion already surfaces the right chunks. A reranker adds a model call in the hot path for no measurable POC gain. |
-| Full eval harness in CI | `evals/ground_truth.json` exists as a seed (one RLM case, six QA cases with expected documents/behaviour). Automating it needs stable, budgeted LLM runs; left as the documented next step. |
+| Full eval harness in CI | A LangSmith eval run now exists: `uv run python -m scripts.run_evals` syncs `evals/ground_truth.json` (seven QA cases plus the RLM case with `--include-rlm`) into a dataset and scores it with deterministic evaluators; `--dry-run` scores locally without LangSmith. CI wiring (stable, budgeted LLM runs on a schedule) is the remaining next step. |
 
 ## Architecture
 
@@ -317,7 +316,7 @@ Unknown tools are denied by default. Every check derives from the verified JWT.
 | Sandbox isolation | gVisor / Firecracker microVM per plan run instead of a plain subprocess. |
 | Rate limiting | Redis-backed token bucket shared across replicas (interface unchanged). |
 | Checkpointing | Postgres checkpointer for multi-replica durability and concurrency. |
-| Reranking | Cross-encoder rerank of fused candidates once the corpus grows. |
+| Reranking | Done for chat search (hosted `bge-reranker-v2-m3`, top 20 fused). Next: tune `RERANK_CANDIDATES` and fusion `alpha` against the eval set. |
 | Evaluation | The `evals/ground_truth.json` seed wired into CI: regression runs of QA, RLM counts and guardrail cases with budgeted keys. |
 | Pinecone tenancy | Per-tenant/department indexes or isolated projects with separate API keys, not just namespaces. |
 | Secrets | A secrets manager (vault/KMS) for keys instead of `.env`, plus rotated short-lived credentials. |

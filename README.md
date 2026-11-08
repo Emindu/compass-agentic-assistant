@@ -134,8 +134,8 @@ flowchart TB
 | **Observability** | LangSmith tracing on every run with tags/metadata for role, user, thread and request id; run names for chats, LLM roles and retrievers. structlog JSON logs with a `request_id` correlation id on every line, plus user and role bound per request. The Streamlit activity panel renders every streamed step: routing decisions, retrieval hits with all three scores, RLM plan code, tool calls, validations, errors, timings. |
 | **Async** | Fully async FastAPI, graph, retrieval, tools and LLM calls. Timeouts on every external call (per-attempt LLM timeout, Pinecone fan-out timeout, MCP call timeout, sandbox wall clock). Tenacity retries on transient errors only (429/5xx/timeouts). One shared semaphore bounds LLM concurrency. Fault flags demonstrate the degraded paths. |
 | **RBAC** | Three roles with clearance ceilings (viewer→internal, analyst→confidential, admin→restricted) and tool permissions (viewer: search; analyst: + python analysis + MCP; admin: + admin actions). Enforced in routing, at tool execution, inside retrieval filters, and in RLM primitives — always derived from the verified JWT, never from model output. |
-| **Code quality** | Typed state and Pydantic models at every boundary; ruff (E, F, I, B, UP, ASYNC configured, line length 100); 256 pytest tests grouped by area (see Tests); one settings object for all tunables; scripts for setup, ingestion, smoke tests and the scripted demo. |
-| **Docs** | This README, [docs/DESIGN.md](docs/DESIGN.md) (design and decisions), [docs/adr/](docs/adr/) (six short ADRs), [docs/architecture.mmd](docs/architecture.mmd) + [docs/architecture.svg](docs/architecture.svg), and an eval seed at [evals/ground_truth.json](evals/ground_truth.json). |
+| **Code quality** | Typed state and Pydantic models at every boundary; ruff (E, F, I, B, UP, ASYNC configured, line length 100); 283 pytest tests grouped by area (see Tests); one settings object for all tunables; scripts for setup, ingestion, smoke tests and the scripted demo. |
+| **Docs** | This README, [docs/DESIGN.md](docs/DESIGN.md) (design and decisions), [docs/adr/](docs/adr/) (six short ADRs), [docs/architecture.mmd](docs/architecture.mmd) + [docs/architecture.svg](docs/architecture.svg), and an eval harness over [evals/ground_truth.json](evals/ground_truth.json) (`uv run python -m scripts.run_evals`). |
 
 ## Quickstart
 
@@ -161,6 +161,8 @@ Optional checks and helpers:
 uv run python -m scripts.smoke_llm                 # end-to-end Mistral smoke test
 uv run python -m scripts.smoke_demo                # scripted demo cases against a live API
 uv run python -m scripts.search_demo "HikariPool" --fault-pinecone   # retrieval + BM25 fallback
+uv run python -m scripts.run_evals                 # LangSmith experiment over evals/ground_truth.json
+uv run python -m scripts.run_evals --dry-run       # same scoring locally, no LangSmith calls
 uv run python -m scripts.chat_cli --user ada "What is the break-glass procedure?"  # terminal client
 ```
 
@@ -249,11 +251,12 @@ data/
   corpus/           25 markdown documents in 5 department folders
   checkpoints/      SQLite checkpointer database
 docs/               DESIGN.md, architecture.mmd/.svg, adr/
-evals/              ground_truth.json (eval seed: 1 RLM case, 6 QA cases)
+evals/              ground_truth.json (eval seed: 7 QA cases + 1 RLM case),
+                    scored by scripts/run_evals (LangSmith experiment; --dry-run offline)
 ingestion/          chunk, ingest (Pinecone upsert), models
 mcp_server/         compass-directory FastMCP server + JSON datasets
-scripts/            setup_pinecone, smoke_llm, smoke_demo, search_demo, chat_cli
-tests/              23 test modules, 256 tests
+scripts/            setup_pinecone, smoke_llm, smoke_demo, search_demo, chat_cli, run_evals
+tests/              25 test modules, 283 tests
 ui/                 streamlit_app, client (HTTP/SSE), activity (event reducers)
 (Dockerfile, docker-compose.yml: one image, api + ui services)
 ```
@@ -269,6 +272,9 @@ ui/                 streamlit_app, client (HTTP/SSE), activity (event reducers)
 - The rate limiter is in-process (single replica); the checkpointer is SQLite; both swap for
   Redis-backed equivalents behind unchanged interfaces.
 - The sandbox is a subprocess with AST checks and rlimits, not gVisor/Firecracker.
-- Retrieval has no learned reranker; fusion weight and `top_k` are fixed defaults.
-- `evals/ground_truth.json` is a seed (7 cases), not a CI-run harness; wiring it into CI is the
-  next step, along with longer-horizon per-user memory and answer-quality feedback loops.
+- Reranking uses Pinecone's hosted `bge-reranker-v2-m3` over the top 20 fused chunks (fused
+  order if it fails); fusion weight and `top_k` are fixed defaults, not tuned on evals.
+- `evals/ground_truth.json` now runs as a LangSmith experiment (`uv run python -m
+  scripts.run_evals`; `--dry-run` scores locally without LangSmith, `--include-rlm` adds the
+  research case); wiring it into CI is the next step, along with longer-horizon per-user
+  memory and answer-quality feedback loops.
