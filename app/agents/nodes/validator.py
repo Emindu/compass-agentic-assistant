@@ -20,7 +20,9 @@ from app.retrieval.models import RetrievedChunk
 # commas ("[A#01, B#02]"). Adjacent ids also arrive as separate brackets ("[A#01][B#02]");
 # matching whole brackets (instead of bare ids) lets brackets that only contain prose
 # ("[note]", "[1]") be ignored, and lets an unknown id be excised from a mixed bracket.
-_CHUNK_ID = r"[A-Z]{2,5}-[A-Z0-9-]+#\d{2}"
+# Deliberately looser than real ids (which look like "INC-2026-0214#03") so that malformed
+# references a model invents, like "[3#01]", are still recognised and rejected as unknown.
+_CHUNK_ID = r"[A-Za-z0-9][\w.-]*#\d{1,3}"
 CITATION_RE = re.compile(rf"\[\s*({_CHUNK_ID}(?:\s*,\s*{_CHUNK_ID})*)\s*\]")
 
 # Phrases an honest "no evidence" answer uses; matched case-insensitively so paraphrasing the
@@ -35,6 +37,12 @@ _NO_INFO_PHRASES = (
 )
 
 MAX_RESPONSE_ATTEMPTS = 2
+
+NO_EVIDENCE_ANSWER = (
+    "I couldn't find information in the documents available to you that answers this "
+    "question. Try rephrasing it, or ask a colleague with access to the relevant team's "
+    "documents."
+)
 
 logger = get_logger(__name__)
 
@@ -146,13 +154,19 @@ async def validator_node(state: AgentState) -> dict:
     )
 
     update: dict = {"validation": result}
-    if not result.valid and attempts >= MAX_RESPONSE_ATTEMPTS and result.unknown_citations:
-        # Retry budget exhausted: ship the answer minus the invented references, with an
-        # explicit caveat, so the user keeps the substance instead of a dead end.
-        update["draft_answer"] = (
-            strip_unknown_citations(answer, result.unknown_citations)
-            + "\n\n_Note: some references could not be verified and were removed._"
-        )
+    if not result.valid and attempts >= MAX_RESPONSE_ATTEMPTS:
+        if requires_evidence and not result.cited_ids:
+            # Nothing in the answer is backed by a retrieved chunk: shipping it would present
+            # unsupported claims as fact, so the honest fallback replaces it entirely.
+            update["draft_answer"] = NO_EVIDENCE_ANSWER
+            emit("guardrail", node="validator", action="replaced_unsupported_answer")
+        elif result.unknown_citations:
+            # Some claims are backed: ship the answer minus the invented references, with an
+            # explicit caveat, so the user keeps the substance instead of a dead end.
+            update["draft_answer"] = (
+                strip_unknown_citations(answer, result.unknown_citations)
+                + "\n\n_Note: some references could not be verified and were removed._"
+            )
     return update
 
 

@@ -51,8 +51,9 @@ def test_extract_citations_unique_in_order():
 
 
 def test_extract_citations_ignores_non_ids():
-    answer = "See the runbook [note] and step [1], not [IN#1] but [INC-2026-0214#03]."
-    assert extract_citations(answer) == ["INC-2026-0214#03"]
+    answer = "See the runbook [note] and step [1], and [IN#1] and [INC-2026-0214#03]."
+    # prose brackets are ignored; malformed ids are still treated as citations (to be rejected)
+    assert extract_citations(answer) == ["IN#1", "INC-2026-0214#03"]
 
 
 def test_valid_answer_citing_retrieved_ids():
@@ -142,12 +143,16 @@ def test_route_after_validation_retries_until_budget_exhausted():
 
 
 async def test_validator_node_strips_fake_id_at_max_attempts():
-    state = _state("Retries had no backoff [FAKE-1#01].", [chunk("INC-2026-0214#01")], attempts=2)
+    state = _state(
+        "Retries had no backoff [INC-2026-0214#01][FAKE-1#01].",
+        [chunk("INC-2026-0214#01")],
+        attempts=2,
+    )
     update = await validator_node(state)
     assert update["validation"].valid is False
     draft = update["draft_answer"]
     assert "FAKE-1#01" not in draft
-    assert "Retries had no backoff" in draft
+    assert "Retries had no backoff [INC-2026-0214#01]" in draft
     assert "_Note: some references could not be verified" in draft
 
 
@@ -156,3 +161,22 @@ async def test_validator_node_without_stripping_when_valid():
     update = await validator_node(state)
     assert update["validation"].valid is True
     assert "draft_answer" not in update
+
+
+async def test_unsupported_answer_is_replaced_after_retries(monkeypatch):
+    from app.agents.nodes import validator as v
+    from app.agents.state import RouteDecision
+
+    monkeypatch.setattr(v, "emit", lambda *a, **k: None)
+    route = RouteDecision(
+        intent="deep_research", agents=["research"], search_query="q", reasoning="r"
+    )
+    state = {
+        "draft_answer": "Third-party outages caused most failures [3#01][7#02].",
+        "retrieved": [],
+        "route": route,
+        "response_attempts": v.MAX_RESPONSE_ATTEMPTS,
+    }
+    out = await v.validator_node(state)
+    assert out["validation"].unknown_citations == ["3#01", "7#02"]  # malformed ids caught
+    assert out["draft_answer"] == v.NO_EVIDENCE_ANSWER
