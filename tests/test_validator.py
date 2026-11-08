@@ -180,3 +180,23 @@ async def test_unsupported_answer_is_replaced_after_retries(monkeypatch):
     out = await v.validator_node(state)
     assert out["validation"].unknown_citations == ["3#01", "7#02"]  # malformed ids caught
     assert out["draft_answer"] == v.NO_EVIDENCE_ANSWER
+
+
+async def test_successful_tool_result_counts_as_evidence(monkeypatch):
+    from app.agents.nodes import validator as v
+    from app.agents.state import RouteDecision
+
+    monkeypatch.setattr(v, "emit", lambda *a, **k: None)
+    route = RouteDecision(
+        intent="directory_lookup", agents=["tools", "retrieval"], search_query="q", reasoning="r"
+    )
+    state = {
+        "draft_answer": "Nimal Perera is on call (live directory).",
+        "retrieved": [],
+        "route": route,
+        "tool_results": [{"tool": "get_service_status", "ok": True, "result": {}}],
+        "response_attempts": 1,
+    }
+    out = await v.validator_node(state)
+    assert out["validation"].valid is True
+    assert "draft_answer" not in out

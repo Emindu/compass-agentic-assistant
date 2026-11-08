@@ -150,7 +150,14 @@ async def validator_node(state: AgentState) -> dict:
     route = state.get("route")
     # Evidence only where evidence exists: retrieval/research produce citable chunks; a
     # tools-only answer is about live directory data and legitimately has no chunk ids.
-    requires_evidence = route is not None and bool({"retrieval", "research"} & set(route.agents))
+    # A successful tool call is evidence too: "who is on call" is answered from the live
+    # directory, and forcing a document citation made the retry drop the correct answer.
+    tool_evidence = any(r.get("ok") for r in state.get("tool_results") or [])
+    requires_evidence = (
+        route is not None
+        and bool({"retrieval", "research"} & set(route.agents))
+        and not tool_evidence
+    )
     attempts = state.get("response_attempts", 0)
 
     result = validate_answer(answer, retrieved, requires_evidence)
