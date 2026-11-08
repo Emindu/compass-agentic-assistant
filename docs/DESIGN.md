@@ -31,3 +31,26 @@ Compass uses Mistral models through `langchain-mistralai`, in three roles set fr
 **Resilience:** main falls back to fast, and code falls back to `CODE_LLM_FALLBACK` and then
 main. Each fallback is logged as `llm_fallback` and visible in LangSmith. `FAULT_LLM=true`
 simulates a main-model outage for the demo.
+
+## Retrieval design
+
+- **Two Pinecone indexes, one per signal.** `compass-dense` (llama-text-embed-v2, cosine) finds
+  paraphrases; `compass-sparse` (pinecone-sparse-english-v0, dot product) matches exact terms
+  such as `HikariPool` or `INC-2026-0214`. Separate indexes let both run in parallel and let the
+  UI show both raw scores.
+- **Namespaces per department** (`payments`, `platform`, `security`, `retail`, `corporate`), so
+  a query can be scoped and a department re-indexed on its own. Namespaces are not a security
+  boundary.
+- **Access control is a metadata filter from the JWT role**, always the first clause:
+  `access_rank <= clearance` (viewer → internal, analyst → confidential, admin → restricted).
+  The LLM never sets it.
+- **Fusion:** each list is divided by its top score, then
+  `fused = alpha * dense + (1 - alpha) * sparse` (`HYBRID_ALPHA`, default 0.6). Max-normalisation
+  keeps relevant low-ranked hits above zero; a single weight is easier to explain than RRF.
+- **At most 2 chunks per document** by default, so several sources can be cited instead of one
+  long document filling every slot.
+- **Degradation:** if one index fails, the other answers alone; if both fail (or
+  `FAULT_PINECONE=true`), a local `rank_bm25` index over the same chunks answers with the same
+  access filters. Results carry `degraded` and a user-facing note.
+- **Latency:** about 0.4 s warm for 10 parallel calls (5 namespaces × 2 indexes); the first call
+  pays about 4 s of connection setup, so the API warms the clients at start-up.
