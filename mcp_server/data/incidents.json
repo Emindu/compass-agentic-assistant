@@ -1,0 +1,55 @@
+[
+  {
+    "incident_id": "INC-2026-1002",
+    "title": "Biller gateway rejecting all direct-debit submissions",
+    "service": "biller-gateway",
+    "department": "payments",
+    "severity": "SEV1",
+    "status": "open",
+    "opened": "2026-10-02",
+    "owner": "EMP-005"
+  },
+  {
+    "incident_id": "INC-2026-0925",
+    "title": "CEFTS adapter batch settlement delays",
+    "service": "cefts-adapter",
+    "department": "payments",
+    "severity": "SEV2",
+    "status": "open",
+    "opened": "2026-09-25",
+    "owner": "EMP-004"
+  },
+  {
+    "incident_id": "INC-2026-0819",
+    "title": "Card switch TLS failures after CA chain change",
+    "service": "card-switch-connector",
+    "department": "payments",
+    "severity": "SEV2",
+    "status": "resolved",
+    "opened": "2026-08-19",
+    "closed": "2026-08-19",
+    "owner": "EMP-001"
+  },
+  {
+    "incident_id": "INC-2026-0712",
+    "title": "Duplicate settlement rows in payments-ledger reconciliation",
+    "service": "payments-ledger",
+    "department": "payments",
+    "severity": "SEV3",
+    "status": "resolved",
+    "opened": "2026-07-12",
+    "closed": "2026-07-15",
+    "owner": "EMP-003"
+  },
+  {
+    "incident_id": "INC-2026-0611",
+    "title": "Mobile app API latency during peak commuting hours",
+    "service": "mobile-app-api",
+    "department": "retail",
+    "severity": "SEV3",
+    "status": "resolved",
+    "opened": "2026-06-11",
+    "closed": "2026-06-13",
+    "owner": "EMP-007"
+  }
+]

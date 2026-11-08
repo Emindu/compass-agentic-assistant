@@ -1,0 +1,51 @@
+[
+  {
+    "service": "card-switch-connector",
+    "owner_team": "payments-sre",
+    "status": "operational",
+    "last_incident": "INC-2026-0819",
+    "runbook": "RB-PAY-003-V2"
+  },
+  {
+    "service": "cefts-adapter",
+    "owner_team": "payments-core",
+    "status": "degraded",
+    "last_incident": "INC-2026-0925",
+    "runbook": "RB-PAY-004"
+  },
+  {
+    "service": "payments-ledger",
+    "owner_team": "payments-core",
+    "status": "operational",
+    "last_incident": "INC-2026-0214",
+    "runbook": "RB-PAY-005"
+  },
+  {
+    "service": "payments-gateway",
+    "owner_team": "payments-sre",
+    "status": "operational",
+    "last_incident": "INC-2026-0304",
+    "runbook": "RB-PAY-006"
+  },
+  {
+    "service": "biller-gateway",
+    "owner_team": "payments-ops",
+    "status": "outage",
+    "last_incident": "INC-2026-1002",
+    "runbook": "RB-PAY-007"
+  },
+  {
+    "service": "mobile-app-api",
+    "owner_team": "retail-channels",
+    "status": "operational",
+    "last_incident": "INC-2026-0611",
+    "runbook": "RB-PLT-007"
+  },
+  {
+    "service": "core-banking",
+    "owner_team": "platform-eng",
+    "status": "degraded",
+    "last_incident": "INC-2026-0125",
+    "runbook": "RB-PLT-001"
+  }
+]

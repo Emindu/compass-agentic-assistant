@@ -1,0 +1,132 @@
+[
+  {
+    "employee_id": "EMP-001",
+    "name": "Nimal Perera",
+    "title": "Senior SRE Engineer",
+    "team": "payments-sre",
+    "department": "payments",
+    "email": "nimal.perera@compass-bank.example",
+    "on_call": true,
+    "private": {
+      "salary": 145000,
+      "national_id": "851234567V"
+    }
+  },
+  {
+    "employee_id": "EMP-002",
+    "name": "Kavya Silva",
+    "title": "Payments Platform Lead",
+    "team": "payments-sre",
+    "department": "payments",
+    "email": "kavya.silva@compass-bank.example",
+    "on_call": false,
+    "private": {
+      "salary": 168000,
+      "national_id": "859876543V"
+    }
+  },
+  {
+    "employee_id": "EMP-003",
+    "name": "Ruwan Fernando",
+    "title": "Backend Engineer",
+    "team": "payments-core",
+    "department": "payments",
+    "email": "ruwan.fernando@compass-bank.example",
+    "on_call": false,
+    "private": {
+      "salary": 122000,
+      "national_id": "854455661V"
+    }
+  },
+  {
+    "employee_id": "EMP-004",
+    "name": "Dilini Jayawardena",
+    "title": "CEFTS Adapter Owner",
+    "team": "payments-core",
+    "department": "payments",
+    "email": "dilini.j@compass-bank.example",
+    "on_call": true,
+    "private": {
+      "salary": 138000,
+      "national_id": "862233445V"
+    }
+  },
+  {
+    "employee_id": "EMP-005",
+    "name": "Tharindu Bandara",
+    "title": "Backend Engineer",
+    "team": "payments-ops",
+    "department": "payments",
+    "email": "tharindu.b@compass-bank.example",
+    "on_call": false,
+    "private": {
+      "salary": 118000,
+      "national_id": "871122334V"
+    }
+  },
+  {
+    "employee_id": "EMP-006",
+    "name": "Sanduni Rathnayake",
+    "title": "Payments Ops Analyst",
+    "team": "payments-ops",
+    "department": "payments",
+    "email": "sanduni.r@compass-bank.example",
+    "on_call": false,
+    "private": {
+      "salary": 96000,
+      "national_id": "883344556V"
+    }
+  },
+  {
+    "employee_id": "EMP-007",
+    "name": "Ishara Gunasekara",
+    "title": "Platform Architect",
+    "team": "platform-eng",
+    "department": "platform",
+    "email": "ishara.g@compass-bank.example",
+    "on_call": false,
+    "private": {
+      "salary": 175000,
+      "national_id": "845566778V"
+    }
+  },
+  {
+    "employee_id": "EMP-008",
+    "name": "Malith Wickramasinghe",
+    "title": "Security Engineer",
+    "team": "security-response",
+    "department": "security",
+    "email": "malith.w@compass-bank.example",
+    "on_call": true,
+    "private": {
+      "salary": 152000,
+      "national_id": "856677889V"
+    }
+  },
+  {
+    "employee_id": "EMP-009",
+    "name": "Amaya Dissanayake",
+    "title": "Retail Channels Product Owner",
+    "team": "retail-channels",
+    "department": "retail",
+    "email": "amaya.d@compass-bank.example",
+    "on_call": false,
+    "private": {
+      "salary": 134000,
+      "national_id": "867788990V"
+    }
+  },
+  {
+    "employee_id": "EMP-010",
+    "name": "Pradeep Kotuwegedara",
+    "title": "Corporate Banking Relationship Manager",
+    "team": "corporate-coverage",
+    "department": "corporate",
+    "email": "pradeep.k@compass-bank.example",
+    "on_call": false,
+    "private": {
+      "salary": 127000,
+      "national_id": "878899001V"
+    }
+  }
+]
