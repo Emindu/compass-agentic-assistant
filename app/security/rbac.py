@@ -6,6 +6,8 @@ Clearance is a ceiling on document access level: a role sees every level up to a
 
 from enum import StrEnum
 
+from pydantic import BaseModel
+
 from ingestion.models import AccessLevel
 
 
@@ -24,3 +26,17 @@ ROLE_CLEARANCE: dict[Role, AccessLevel] = {
 
 def clearance_for(role: Role) -> AccessLevel:
     return ROLE_CLEARANCE[role]
+
+
+class UserContext(BaseModel):
+    """Who is asking. Built only from a verified JWT, never from chat text, and placed in graph
+    state so every node (and every trace) knows the caller's role and clearance."""
+
+    user_id: str
+    name: str
+    role: Role
+    department: str
+
+    @property
+    def clearance(self) -> AccessLevel:
+        return clearance_for(self.role)
