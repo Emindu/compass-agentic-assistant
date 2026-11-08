@@ -1,0 +1,44 @@
+%% The agent graph exactly as wired in app/agents/graph.py and app/rlm/graph.py.
+%% Node and edge set match build_graph().get_graph(xray=1); labels are the routing
+%% conditions from route_after_guard / _supervisor / _tools / _validation / _execute / _reduce.
+%% Solid arrows are fixed edges, dashed arrows are conditional edges.
+flowchart TD
+    S(["START"]) --> LM["load_memory<br/>reset per-turn fields"]
+    LM --> IG["input_guard<br/>patterns, then fast model"]
+    IG -.->|"blocked"| FIN["finalize"]
+    IG -.->|"allowed"| SUP{{"supervisor<br/>typed RouteDecision"}}
+
+    SUP -.->|"document question<br/>(or a denied route's fallback)"| RET["retrieval<br/>hybrid search + rerank"]
+    SUP -.->|"research / analysis<br/>analyst, admin only"| P
+    SUP -.->|"tools: MCP or admin<br/>if the role allows"| TOOLS["tools<br/>MCP lookups, admin actions<br/>pauses on interrupt() for approval"]
+    SUP -.->|"respond_direct<br/>no agents, or admin denied"| RESP
+
+    TOOLS -.->|"route also needs documents"| RET
+    TOOLS -.->|"otherwise"| RESP["response<br/>streamed answer + citations"]
+    RET --> RESP
+
+    subgraph RLM["research: RLM subgraph (app/rlm/graph.py)"]
+        P["plan<br/>code model writes a Python search plan"] --> X["execute<br/>sandbox + clearance-checked primitives"]
+        X -.->|"plan error, attempts left (max 2)"| P
+        X -.->|"Send x N batches"| B["analyse_batch<br/>fast model, in parallel"]
+        X -.->|"no batches, or attempts used up"| R["reduce<br/>main model synthesis"]
+        B --> R
+        R -.->|"follow-up question, depth below 2"| P
+    end
+
+    R -.->|"done"| RESP
+    RESP --> VAL{{"validator<br/>citation check + output guard"}}
+    VAL -.->|"invalid, attempts below 2"| RESP
+    VAL -.->|"valid, or out of attempts"| FIN
+    FIN --> UM["update_memory<br/>rolling summary"]
+    UM --> E(["END"])
+
+    classDef io fill:#E6EEF8,stroke:#2F6FB5,color:#14213D
+    classDef guard fill:#FBF1E1,stroke:#C77D1A,color:#14213D
+    classDef agent fill:#FDFCF9,stroke:#14213D,color:#14213D
+    classDef rlm fill:#FDFCF9,stroke:#2F6FB5,color:#14213D
+    class S,E io
+    class IG,VAL guard
+    class LM,SUP,RET,TOOLS,RESP,FIN,UM agent
+    class P,X,B,R rlm
+    style RLM fill:#F3F6FA,stroke:#2F6FB5,color:#14213D

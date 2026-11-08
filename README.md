@@ -122,6 +122,17 @@ flowchart TB
     UM --> DB
 ```
 
+### The LangGraph agent graph
+
+Every node and edge of the compiled graph (`build_graph()` in
+[app/agents/graph.py](app/agents/graph.py), with the RLM subgraph from
+[app/rlm/graph.py](app/rlm/graph.py) expanded). Dashed arrows are conditional edges, labelled with
+the routing condition; amber nodes are the guard and the validator.
+
+![LangGraph agent graph](docs/langgraph.png)
+
+Source: [docs/langgraph.mmd](docs/langgraph.mmd) · vector: [docs/langgraph.svg](docs/langgraph.svg)
+
 ## Features by grading area
 
 | Area | What is implemented |
@@ -250,7 +261,7 @@ app/
 data/
   corpus/           25 markdown documents in 5 department folders
   checkpoints/      SQLite checkpointer database
-docs/               DESIGN.md, architecture.mmd/.svg, adr/
+docs/               DESIGN.md, architecture.mmd/.svg, langgraph.mmd/.svg/.png, adr/
 evals/              ground_truth.json (eval seed: 7 QA cases + 1 RLM case),
                     scored by scripts/run_evals (LangSmith experiment; --dry-run offline)
 ingestion/          chunk, ingest (Pinecone upsert), models
