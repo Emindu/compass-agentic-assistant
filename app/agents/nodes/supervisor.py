@@ -12,6 +12,7 @@ from app.agents.events import emit
 from app.agents.nodes.common import instrumented, last_user_text
 from app.agents.state import AgentState, RouteDecision
 from app.core.llm import ainvoke_structured
+from app.security.rbac import can_use
 
 HISTORY_MESSAGES = 6  # recent turns given verbatim; older context comes from the summary
 
@@ -47,9 +48,23 @@ async def supervisor_node(state: AgentState) -> dict:
 
 
 def route_after_supervisor(state: AgentState) -> str:
-    """Branch on the typed decision. Research/analysis specialists join in the next block;
-    until then they are served by retrieval so the graph never routes to a missing node."""
+    """Branch on the typed decision, filtered by what the user's role may use.
+
+    Deep research and analytics run the Python analysis tool (Analyst/Admin only). A Viewer
+    asking for them is told so in the activity panel and gets a normal document search.
+    """
     route = state.get("route")
     if route is None or not route.agents:
         return "respond_direct"
+    if {"research", "analysis"} & set(route.agents):
+        role = state["user"].role
+        if can_use(role, "python_analysis"):
+            return "research"
+        emit(
+            "tool_call",
+            node="supervisor",
+            tool="python_analysis",
+            status="denied",
+            reason=f"Role '{role}' may not run analytics tools; using document search instead.",
+        )
     return "retrieval"

@@ -35,6 +35,7 @@ async def load_memory_node(state: AgentState) -> dict:
         "route": None,
         "retrieved": [],
         "retrieval_notes": [],
+        "research": None,
         "draft_answer": None,
         "validation": None,
         "response_attempts": 0,

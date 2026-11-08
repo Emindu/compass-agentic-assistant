@@ -57,6 +57,18 @@ class ValidationResult(BaseModel):
     issues: list[str] = Field(default_factory=list, description="Human-readable problems")
 
 
+class ResearchOutcome(BaseModel):
+    """What the RLM research subgraph hands back to the response agent."""
+
+    synthesis: str = ""
+    themes: list[str] = Field(default_factory=list)
+    findings: list[dict] = Field(default_factory=list)
+    data: dict = Field(default_factory=dict)
+    documents: list[str] = Field(default_factory=list)
+    plan_code: str = ""
+    depth: int = 0
+
+
 def errors_reducer(left: list[AgentError] | None, right: list[AgentError] | None):
     """Append errors from parallel nodes; a node returns `None` to reset at a new turn."""
     if right is None:
@@ -74,6 +86,7 @@ class AgentState(TypedDict, total=False):
     route: RouteDecision | None
     retrieved: list[RetrievedChunk]
     retrieval_notes: list[str]
+    research: ResearchOutcome | None
     draft_answer: str | None
     validation: ValidationResult | None
     response_attempts: int

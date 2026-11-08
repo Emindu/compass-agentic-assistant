@@ -40,3 +40,19 @@ class UserContext(BaseModel):
     @property
     def clearance(self) -> AccessLevel:
         return clearance_for(self.role)
+
+
+# Tool permissions, from the brief: Viewer = chat + search; Analyst = search + analytics + MCP;
+# Admin = all tools. Checked twice: before a route/tool is offered to the LLM, and again at
+# execution, so a manipulated model still cannot run a tool its user's role does not allow.
+TOOL_PERMISSIONS: dict[str, frozenset[Role]] = {
+    "knowledge_search": frozenset({Role.viewer, Role.analyst, Role.admin}),
+    "python_analysis": frozenset({Role.analyst, Role.admin}),  # RLM research + analytics
+    "mcp": frozenset({Role.analyst, Role.admin}),
+    "admin": frozenset({Role.admin}),
+}
+
+
+def can_use(role: Role, tool: str) -> bool:
+    """Unknown tools are denied by default."""
+    return role in TOOL_PERMISSIONS.get(tool, frozenset())

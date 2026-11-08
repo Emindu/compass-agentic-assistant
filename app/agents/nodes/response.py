@@ -45,6 +45,18 @@ def _fallback(state: AgentState, _exc: Exception) -> dict:
     return {"draft_answer": text, "response_attempts": state.get("response_attempts", 0) + 1}
 
 
+def _research_block(state: AgentState) -> str:
+    research = state.get("research")
+    if research is None:
+        return ""
+    return (
+        "\nResearch findings from the parallel analysis of the documents below (use them, "
+        "and cite the underlying chunk ids):\n"
+        f"{research.synthesis}\nThemes: {research.themes}\nComputed data: {research.data}\n"
+        f"Documents analysed: {research.documents}\n"
+    )
+
+
 def _feedback(state: AgentState) -> str:
     validation = state.get("validation")
     if validation is None or validation.valid:
@@ -64,7 +76,7 @@ async def response_node(state: AgentState) -> dict:
             **common,
             department=user.department,
             summary=state.get("summary") or "(none)",
-            feedback=_feedback(state),
+            feedback=_research_block(state) + _feedback(state),
             documents=format_documents(state.get("retrieved") or []),
         )
     else:

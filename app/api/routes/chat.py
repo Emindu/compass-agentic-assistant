@@ -65,7 +65,11 @@ async def chat_stream(
 
     async def events() -> AsyncIterator[str]:
         try:
-            async for event in graph.astream(inputs, config, stream_mode="custom"):
+            # subgraphs=True: the research agent runs a nested graph whose plan/batch events
+            # must reach the activity panel too; the namespace tuple is not needed.
+            async for _ns, event in graph.astream(
+                inputs, config, stream_mode="custom", subgraphs=True
+            ):
                 yield AgentEvent.model_validate(event).sse()
         except Exception as exc:  # stream already started: report in-band, never crash
             log.exception("chat_stream_failed")

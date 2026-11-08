@@ -1,7 +1,8 @@
 """The Compass agent graph.
 
-    START → load_memory → supervisor ─┬─(needs documents)→ retrieval → response
-                                      └─(smalltalk/out of scope)──────→ response
+    START → load_memory → supervisor ─┬─(needs documents)────────────→ retrieval → response
+                                      ├─(deep research / analytics)──→ research  → response
+                                      └─(smalltalk / out of scope)─────────────────→ response
     response → validator ─┬─(invalid, retries left)→ response
                           └─(valid / out of retries)→ finalize → update_memory → END
 
@@ -16,6 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.agents.nodes.common import instrumented
 from app.agents.nodes.memory import load_memory_node, update_memory_node
+from app.agents.nodes.research import research_node
 from app.agents.nodes.response import finalize_node, response_node
 from app.agents.nodes.retrieval import retrieval_node
 from app.agents.nodes.supervisor import route_after_supervisor, supervisor_node
@@ -28,6 +30,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStat
     g.add_node("load_memory", load_memory_node)
     g.add_node("supervisor", supervisor_node)
     g.add_node("retrieval", retrieval_node)
+    g.add_node("research", research_node)
     g.add_node("response", response_node)
     # Wrapped here so the validator emits node_start/node_end and contains its own failures.
     g.add_node("validator", instrumented("validator")(validator_node))
@@ -39,9 +42,10 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStat
     g.add_conditional_edges(
         "supervisor",
         route_after_supervisor,
-        {"retrieval": "retrieval", "respond_direct": "response"},
+        {"retrieval": "retrieval", "research": "research", "respond_direct": "response"},
     )
     g.add_edge("retrieval", "response")
+    g.add_edge("research", "response")
     g.add_edge("response", "validator")
     g.add_conditional_edges(
         "validator", route_after_validation, {"response": "response", "finalize": "finalize"}
