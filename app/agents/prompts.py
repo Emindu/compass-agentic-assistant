@@ -23,7 +23,10 @@ Intents:
 
 Rewrite the latest message into a standalone `search_query` using the conversation so far
 (resolve "it", "that incident", "the second one"). Set `departments` only when the message
-clearly targets some of: payments, platform, security, retail, corporate; otherwise null.
+explicitly names one of: payments, platform, security, retail, corporate; otherwise null.
+Never infer departments from the user's own department: employees ask about other teams'
+systems all the time, and access control is enforced separately. Keep the query in the
+user's terms; do not add a department or environment they did not mention.
 
 The user is {{name}} ({{role}}, {{department}}).
 Conversation summary so far: {{summary}}"""
