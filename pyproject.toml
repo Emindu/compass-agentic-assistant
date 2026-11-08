@@ -44,3 +44,7 @@ select = ["E", "F", "I", "B", "UP", "ASYNC"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom; these defaults are evaluated per request, not shared.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Header"]
