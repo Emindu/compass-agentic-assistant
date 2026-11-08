@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compass — internal engineering walkthrough</title>
+<style>
+  :root {
+    --ink: #1d2733;
+    --muted: #5a6673;
+    --line: #d8dee6;
+    --bg: #ffffff;
+    --brand: #2b6db1;      /* agent graph blue */
+    --accent-1: #23857a;   /* data teal */
+    --accent-2: #7448ad;   /* rlm purple */
+    --accent-3: #a84040;   /* tools red */
+    --accent-4: #b3801f;   /* gateway amber */
+    --soft: #f4f7fa;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: #22262b; color: var(--ink);
+    overflow: hidden;
+  }
+  .deck { position: relative; width: 100vw; height: 100vh; }
+  .slide {
+    display: none;
+    position: absolute; inset: 0;
+    flex-direction: column;
+    background: var(--bg);
+    padding: 44px 64px 72px 64px;
+  }
+  .slide.active { display: flex; }
+  .slide h1 { font-size: 30px; letter-spacing: .2px; margin-bottom: 6px; }
+  .slide h2 { font-size: 26px; margin-bottom: 22px; }
+  .slide .kicker { font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1.6px; color: var(--brand); margin-bottom: 10px; }
+  .slide p { line-height: 1.5; }
+  .slide ol, .slide ul { line-height: 1.55; }
+  .content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .foot { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 64px 18px 64px; font-size: 11px; color: var(--muted); }
+
+  /* title slide */
+  .title-slide { justify-content: center; background: linear-gradient(160deg, #1c3d5e 0%, #2b6db1 100%); color: #fff; }
+  .title-slide .kicker { color: #cfe0f2; }
+  .title-slide h1 { font-size: 48px; }
+  .title-slide p, .title-slide ul { color: #e3edf8; }
+
+  /* generic helpers */
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); border-bottom: 2px solid #c3ccd6; }
+  td b { color: var(--ink); }
+  .cols { display: flex; gap: 36px; flex: 1; }
+  .cols > div { flex: 1; min-width: 0; }
+  .card { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; margin-bottom: 14px; }
+  .card h3 { font-size: 14px; margin-bottom: 6px; }
+  .card p, .card li { font-size: 13px; color: #333d49; }
+  .tag { display: inline-block; font-size: 10.5px; font-weight: bold; padding: 2px 8px; border-radius: 999px; color: #fff; }
+  .t-blue { background: var(--brand); } .t-teal { background: var(--accent-1); }
+  .t-purple { background: var(--accent-2); } .t-red { background: var(--accent-3); }
+  .t-amber { background: var(--accent-4); }
+  code { font-family: "SF Mono", Consolas, "Liberation Mono", monospace; font-size: 12px; background: #eef1f5; padding: 1px 5px; border-radius: 4px; }
+  .num { color: var(--brand); font-weight: bold; }
+  .mono { font-family: "SF Mono", Consolas, monospace; font-size: 12.5px; background: #10141a; color: #d7e3ef; padding: 16px 20px; border-radius: 8px; line-height: 1.65; white-space: pre; overflow: hidden; }
+  .center { justify-content: center; }
+  .small { font-size: 12px; color: var(--muted); }
+  .checklist li { list-style: none; padding-left: 24px; position: relative; font-size: 13.5px; line-height: 1.6; }
+  .checklist li::before { content: "✓"; position: absolute; left: 0; color: var(--accent-1); font-weight: bold; }
+  .checklist li.todo::before { content: "–"; color: #999; }
+  ul { padding-left: 20px; }
+  ol { padding-left: 22px; }
+
+  .histo { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+  .bar-row .lbl { width: 170px; flex: none; }
+  .bar-row .bar { height: 14px; border-radius: 3px; background: var(--brand); }
+  .bar-row .w { width: 34px; text-align: right; color: var(--muted); flex: none; }
+
+  /* nav */
+  .progress { position: absolute; top: 0; left: 0; height: 4px; background: var(--brand); transition: width .15s ease; }
+  .navbtns { display: flex; gap: 8px; align-items: center; }
+  .navbtns button {
+    font-size: 14px; border: 1px solid #b9c1cb; background: #fff; color: var(--muted);
+    border-radius: 6px; padding: 4px 14px; cursor: pointer;
+  }
+  .navbtns button:hover { color: var(--ink); border-color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+<div class="progress" id="progress"></div>
+
+<!-- 1 -->
+<section class="slide title-slide active">
+  <div class="kicker">Internal engineering walkthrough</div>
+  <h1>Compass</h1>
+  <p style="font-size:19px; margin: 10px 0 26px 0;">An agentic knowledge assistant for Commercial Bank — POC</p>
+  <ul style="list-style:none; padding:0; color:#d9e6f4; font-size:14.5px; line-height:2;">
+    <li>Answers employee questions over 25 internal documents, with citations</li>
+    <li>Shows every internal step: routing, retrieval scores, plan code, tool calls, validations</li>
+    <li>Role-based access enforced in code paths, at every layer</li>
+  </ul>
+  <p style="margin-top:34px; font-size:12.5px; color:#bcd0e6;">All bank data in this POC is fictional mock data. · Disagree with a choice? Six ADRs in <code style="background:rgba(255,255,255,.15); color:#eaf2fb;">docs/adr/</code> explain the reasoning.</p>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="kicker">Context</div>
+  <h1>What this POC is and how effort was spent</h1>
+  <div class="content cols" style="margin-top:6px;">
+    <div>
+      <p style="font-size:15px; margin-bottom:14px;">Internal knowledge assistant for bank employees: policies, runbooks, incident reports, specs, meeting minutes. The brief grades ten areas, so the plan spends effort where the marks are — agent architecture, RAG, LangGraph and RLM carry 60%.</p>
+      <p style="font-size:15px;">Everything else is deliberately simple but real: three demo users behind JWTs, one SQLite checkpointer, a local BM25 fallback, Docker Compose for the demo.</p>
+      <p style="font-size:15px; margin-top:14px;">Grading weights used as the build priority order:</p>
+      <div class="histo">
+        <div class="bar-row"><span class="lbl">Agent architecture</span><span class="bar" style="width:400px"></span><span class="w">20%</span></div>
+        <div class="bar-row"><span class="lbl">RAG design</span><span class="bar" style="width:300px"></span><span class="w">15%</span></div>
+        <div class="bar-row"><span class="lbl">LangGraph usage</span><span class="bar" style="width:300px"></span><span class="w">15%</span></div>
+        <div class="bar-row"><span class="lbl">RLM</span><span class="bar" style="width:200px"></span><span class="w">10%</span></div>
+        <div class="bar-row"><span class="lbl">Security &amp; guardrails</span><span class="bar" style="width:200px"></span><span class="w">10%</span></div>
+        <div class="bar-row"><span class="lbl">Observability</span><span class="bar" style="width:200px"></span><span class="w">10%</span></div>
+        <div class="bar-row"><span class="lbl">Async · RBAC · quality · docs</span><span class="bar" style="width:100px; background:#8ea7c4;"></span><span class="w">4×5%</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h3 style="color:var(--accent-1)">Planted ground truth, not vibes</h3>
+        <p>The 25-document corpus has known patterns planted for verification: 8 payment incidents with 3 recurring root causes, two versions of a certificate runbook, a draft with a wrong preliminary cause, a decoy non-payment incident, a poisoned document with an injected instruction. <code>evals/ground_truth.json</code> pins the expected answers.</p>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--accent-1)">Time-boxed build</h3>
+        <p>Planned as one working day: scaffold → corpus → hybrid retrieval → graph + API → RLM → UI + RBAC → guards → docs → 14:30 code freeze → record. Small conventional commits per block, so the history reads as a build log.</p>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--accent-1)">Cut line, stated up front</h3>
+        <p>Long-term per-user memory, feedback loop, learned reranking and the full eval harness were cut on purpose and named as next steps — never RLM, RBAC or tracing.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>2 / 16</span></div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="kicker">Architecture</div>
+  <h1>Request path: gateway → agent graph → answer</h1>
+  <div class="content center" style="align-items:center;">
+    <img src="architecture.svg" alt="Compass architecture" style="max-width: 96%; max-height: 82vh; border: 1px solid var(--line); border-radius: 8px;">
+  </div>
+  <div class="foot"><span>Full-size: <code>docs/architecture.svg</code> · Mermaid source: <code>docs/architecture.mmd</code></span><span>3 / 16</span></div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="kicker">Agent architecture</div>
+  <h1>Supervisor + specialists, one typed state, contained failures</h1>
+  <div class="content cols" style="margin-top:2px;">
+    <div>
+      <div class="mono" title="app/agents/graph.py">START → load_memory → input_guard ─┬─(blocked)────────────────→ finalize
+                                    └─(allowed)→ supervisor
+
+supervisor ─┬─(docs)─────→ retrieval → response
+             ├─(research)→ research  → response
+             ├─(tools)────→ tools ─┬───→ response
+             │                   └─(also docs)→ retrieval → response
+             └─(smalltalk/out of scope)→ response
+
+response → validator ─┬─(invalid, retries left)→ response
+                      └─(valid/out of retries)→ finalize → update_memory → END</div>
+      <p class="small" style="margin-top:10px;">Node names exactly as in <code>app/agents/graph.py</code>. Conditional edges branch on typed values — <code>GuardVerdict</code>, <code>RouteDecision</code>, <code>ValidationResult</code> — never on parsed text.</p>
+    </div>
+    <div>
+      <div class="card" style="border-color:var(--brand);">
+        <h3 class="t-blue" style="color:var(--brand);">Supervisor = a typed decision, not prose</h3>
+        <p><code>RouteDecision</code> carries intent (7 types), specialist agents, a standalone rewritten search query (resolves pronouns from history), department scope and a one-sentence reasoning that shows in the UI.</p>
+      </div>
+      <div class="card" style="border-color:var(--brand);">
+        <h3 style="color:var(--brand);">Failure containment: <code>instrumented</code></h3>
+        <p>Every node is wrapped: a raise becomes an <code>AgentError</code> in state plus an <code>error</code> event, and the node's fallback update runs instead. Supervisor down → plain document search. Model down → answer lists sources. One failing agent degrades the answer; it never crashes the request.</p>
+      </div>
+      <div class="card" style="border-color:var(--brand);">
+        <h3 style="color:var(--brand);">Validator loop</h3>
+        <p>Deterministic citation check between response and finalize: every bracketed id must be a retrieved chunk. Up to 2 retries with issues fed back, then unknown citations are stripped with a caveat — or the answer is replaced with an honest "couldn't find".</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>4 / 16</span></div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="kicker">RAG</div>
+  <h1>Hybrid retrieval with access control the prompt cannot widen</h1>
+  <div class="content cols">
+    <div>
+      <table>
+        <tr><th></th><th>Dense</th><th>Sparse</th></tr>
+        <tr><td><b>Index</b></td><td><code>compass-dense</code></td><td><code>compass-sparse</code></td></tr>
+        <tr><td><b>Model (Pinecone-integrated)</b></td><td>llama-text-embed-v2 (cosine)</td><td>pinecone-sparse-english-v0 (dot)</td></tr>
+        <tr><td><b>Catches</b></td><td>paraphrases: "why did card payments fail because of TLS"</td><td>exact terms: <code>HikariPool</code>, <code>INC-2026-0214</code></td></tr>
+      </table>
+      <p style="margin:16px 0 10px 0; font-size:15px;"><b>Fusion</b> — both lists max-normalised, then weighted:</p>
+      <div class="mono">fused = alpha × dense_norm + (1 − alpha) × sparse_norm    # HYBRID_ALPHA = 0.6</div>
+      <p class="small" style="margin-top:8px;">One explainable knob; both raw scores stay visible in the activity panel. Top-8 with at most 2 chunks per document, so several sources get cited. Both sides over-fetch top_k × 3 for fusion material.</p>
+    </div>
+    <div>
+      <div class="card" style="border-color:var(--accent-1);">
+        <h3 style="color:var(--accent-1);">RBAC is a hard metadata filter</h3>
+        <p>Access comes from the JWT role, never the prompt: <code>access_rank &lt;= clearance</code> is always the first filter clause (viewer→internal, analyst→confidential, admin→restricted). One namespace per department is a scoping convenience, <b>not</b> a security boundary.</p>
+      </div>
+      <div class="card" style="border-color:var(--accent-1);">
+        <h3 style="color:var(--accent-1);">Degradation that never widens access</h3>
+        <p>One index down → the other answers alone. Both down (or <code>FAULT_PINECONE=true</code>) → a local <code>rank_bm25</code> index over the same chunks answers with the <b>identical filter set</b>. Results carry a degraded flag and a user-facing note.</p>
+      </div>
+      <div class="card" style="border-color:var(--accent-1);">
+        <h3 style="color:var(--accent-1);">Citations</h3>
+        <p>Chunks are section-aware (split on <code>##</code>, packed to 1200 chars, deterministic ids) with a contextual header. Answers cite <code>[DOC-ID#NN]</code>, e.g. <code>[RB-PAY-003-V2#03]</code>; the UI shows <code>doc_id › section</code>. ~0.4 s warm retrieval; connections warmed at API start-up.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>5 / 16</span></div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="kicker">RLM — recursive language model</div>
+  <h1>Don't stuff documents into context. Write a program that gathers evidence.</h1>
+  <div class="content cols">
+    <div>
+      <div class="mono">plan → execute → Send ×N analyse_batch → reduce
+                                    │
+              └─ follow-up (depth &lt; 2) ────────┘
+
+plan      code model writes a ≤60-line Python search plan
+execute   plan runs in a sandboxed subprocess;
+          primitives run in the PARENT with the user's clearance
+map       one fast-model call per batch, in parallel (Send)
+          — each batch sees only its own chunks
+reduce    main model: themes + counts, citing chunk ids</div>
+      <p class="small" style="margin-top:10px;"><b>Evidence cannot be invented:</b> only chunk ids the primitives actually returned are accepted into batches; findings citing anything else are dropped, and the parent's evidence becomes the citable <code>retrieved</code> set for the response agent.</p>
+    </div>
+    <div>
+      <div class="card" style="border-color:var(--accent-2);">
+        <h3 style="color:var(--accent-2);">Primitives (parent-side, clearance re-derived from the JWT)</h3>
+        <p><code>list_documents()</code> metadata only · <code>get_sections()</code> named sections (forbidden = missing = <code>[]</code>, so plans can't probe) · <code>search()</code> hybrid retrieval · <code>llm_query()</code> budgeted recursive sub-call to the fast model.</p>
+      </div>
+      <div class="card" style="border-color:var(--accent-2);">
+        <h3 style="color:var(--accent-2);">Sandbox defence in depth</h3>
+        <p>1 Static AST allow-list (imports, no dunders, no eval/exec/…) · 2 restricted builtins + runtime import re-check · 3 empty child env, rlimits (CPU 20 s / 512 MB / fd / filesize) · 4 <code>unshare -rn</code> user+network namespace when the kernel allows. Production upgrade: gVisor / Firecracker.</p>
+      </div>
+      <div class="card" style="border-color:var(--accent-2);">
+        <h3 style="color:var(--accent-2);">Budgets bound the worst case</h3>
+        <p>Per run: 30 s wall clock, ≤40 primitive calls, ≤200 KB result, ≤8 batches × ≤8 chunks, llm_query ≤12 calls / 12k chars. Depth capped at 2; a failed plan gets one corrective retry with the error fed back.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>6 / 16</span></div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="kicker">RLM — the hard-won lesson</div>
+  <h1>Why the planner is forced to select by metadata, not keywords</h1>
+  <div class="content center">
+    <div style="max-width: 900px;">
+      <p style="font-size:17px; line-height:1.6; margin-bottom:18px;">In testing, plans that filtered candidate documents by keywords in titles — or by service name — <b>silently dropped relevant documents</b>. The gap between the user's words and the corpus runs deep:</p>
+      <table>
+        <tr><th>User asks about</th><th>Document says</th></tr>
+        <tr><td>"card payment failures because of TLS"</td><td><code>certificate_expired</code> on <code>cefts-adapter</code>; title: "Weekend CEFTS connectivity loss after client certificate lapsed"</td></tr>
+        <tr><td>"recurring root causes of payment outages"</td><td>Root causes described as "client certificate lapsed", "connection pool exhaustion", "immediate retries without backoff" — no title contains those words</td></tr>
+      </table>
+      <p style="font-size:15.5px; line-height:1.6; margin:18px 0;">So the planner is instructed — in the system prompt <b>and</b> again in the user-role message, because the code model weighs it more — to:</p>
+      <ol style="font-size:15.5px; line-height:1.8;">
+        <li>explore with <code>list_documents()</code> metadata filters (type, department, dates, status) only,</li>
+        <li>read the relevant sections of <b>every</b> candidate,</li>
+        <li>use keyword <code>search()</code> only when metadata cannot narrow, and let batch analysis judge relevance.</li>
+      </ol>
+      <p class="small" style="margin-top:14px;">This also caps context: each batch call sees a few chunks, not the corpus. Recorded in <code>docs/DESIGN.md</code> (RLM section) with the example above.</p>
+    </div>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>7 / 16</span></div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="kicker">Security</div>
+  <h1>Defense in depth, in request order</h1>
+  <div class="content cols" style="gap:30px;">
+    <div>
+      <table>
+        <tr><th>#</th><th>Layer</th><th>Control</th></tr>
+        <tr><td class="num">1</td><td><b>Gateway</b></td><td>JWT verify, per-user token bucket, thread ids scoped by user</td></tr>
+        <tr><td class="num">2</td><td><b>Input guard</b></td><td>regex patterns first, then fast-mode classifier (block only ≥0.75 confidence); fail-open to patterns</td></tr>
+        <tr><td class="num">3</td><td><b>Routing</b></td><td>role-filtered agent routing with <code>denied</code> events</td></tr>
+        <tr><td class="num">4</td><td><b>Tool binding ×2</b></td><td>LLM only sees <code>tools_for(role)</code>, re-checked at execution; Pydantic args, <code>extra="forbid"</code>, validated before I/O</td></tr>
+        <tr><td class="num">5</td><td><b>Retrieval</b></td><td><code>access_rank ≤ clearance</code> filter from the JWT, identical in BM25 fallback and RLM primitives</td></tr>
+      </table>
+    </div>
+    <div>
+      <table>
+        <tr><th>#</th><th>Layer</th><th>Control</th></tr>
+        <tr><td class="num">6</td><td><b>Sanitiser</b></td><td>instruction-like lines, HTML comments, image beacons, invisible chars stripped from chunks &amp; tool results; <code>&lt;document&gt;</code>/<code>&lt;tool_result&gt;</code> wrappers</td></tr>
+        <tr><td class="num">7</td><td><b>Citation validator</b></td><td>deterministic set difference vs retrieved ids; retry ≤2, then strip or replace</td></tr>
+        <tr><td class="num">8</td><td><b>Output guard</b></td><td>blocks financial advice, secret shapes (redacted), system-prompt leakage; warns on brand-voice issues, external links</td></tr>
+        <tr><td class="num">9</td><td><b>Sandbox + approval</b></td><td>RLM code runs only sandboxed; admin tools pause on <code>interrupt()</code> — Approve/Reject via admin-only endpoint</td></tr>
+        <tr><td class="num">10</td><td><b>Data minimisation</b></td><td>MCP responses drop the employee <code>private</code> sub-object (salary, national_id) field-by-field</td></tr>
+      </table>
+    </div>
+  </div>
+  <p class="small" style="margin-top:10px;">Design rule: guards are <b>graph nodes</b>, so verdicts are state, typed branches and events — not middleware. A fooled model cannot reach forbidden tools or data; control lives in code.</p>
+  <div class="foot"><span>Compass — internal</span><span>8 / 16</span></div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="kicker">RBAC</div>
+  <h1>Three roles; clearance ceilings and tool permissions</h1>
+  <div class="content">
+    <table style="font-size:14.5px;">
+      <tr><th>Capability</th><th>vera · viewer</th><th>anil · analyst</th><th>ada · admin</th><th>Enforced</th></tr>
+      <tr><td>Document chat + hybrid search</td><td>✓</td><td>✓</td><td>✓</td><td>everywhere</td></tr>
+      <tr><td>Clearance ceiling (access level)</td><td>internal</td><td>confidential</td><td>restricted</td><td>retrieval metadata filter, first clause</td></tr>
+      <tr><td>RLM research / sandboxed Python analysis</td><td>—</td><td>✓</td><td>✓</td><td>routing + re-check at execution, session carries clearance</td></tr>
+      <tr><td>MCP directory (employee, service status, open incidents)</td><td>—</td><td>✓</td><td>✓</td><td>catalogue filter + re-check inside <code>call_mcp_tool</code></td></tr>
+      <tr><td>Admin actions: reindex, revoke</td><td>—</td><td>—</td><td>✓ + approval</td><td><code>interrupt()</code> → <code>execute_admin_tool(role, approved=True)</code>, audited</td></tr>
+      <tr><td>Resolve pending approvals (<code>POST /chat/resume</code>)</td><td>—</td><td>—</td><td>✓</td><td>endpoint-level role check</td></tr>
+    </table>
+    <div class="cols" style="margin-top:18px; flex:none;">
+      <div class="card" style="margin-bottom:0;">
+        <h3 style="color:var(--brand);">Derived from the verified JWT only</h3>
+        <p><code>UserContext</code> (id, name, role, department, clearance) is rebuilt from JWT claims each turn. Chat text never sets identity, scope or access.</p>
+      </div>
+      <div class="card" style="margin-bottom:0;">
+        <h3 style="color:var(--brand);">Demo-friendly denials</h3>
+        <p>A viewer asking for analytics gets a <code>denied</code> event in the panel and falls back to document search; an admin request from a non-admin gets a deterministic refusal. Both paths are scripted and unit-tested.</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>9 / 16</span></div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="kicker">LLM setup</div>
+  <h1>Three model roles, shared limits, explicit fallbacks</h1>
+  <div class="content cols">
+    <div>
+      <table>
+        <tr><th>Role</th><th>Model</th><th>Used for</th><th>Fallback</th></tr>
+        <tr><td><b>main</b></td><td>mistral-large-latest</td><td>supervisor routing, final answer, RLM reduce, tools planning</td><td>→ fast</td></tr>
+        <tr><td><b>fast</b></td><td>mistral-small-latest</td><td>input guard, RLM batch map, summaries, <code>llm_query</code></td><td>—</td></tr>
+        <tr><td><b>code</b></td><td>codestral-latest</td><td>RLM planner (Python search plans)</td><td>→ CODE_LLM_FALLBACK → main</td></tr>
+      </table>
+      <p style="font-size:14px; margin-top:14px;"><b>One factory rule:</b> every LLM call goes through <code>app/core/llm.py</code> — <code>ainvoke_llm</code> / <code>ainvoke_structured</code> / <code>astream_llm</code> — never a raw client. That is where the shared semaphore, timeouts, retries and fallback chains live.</p>
+    </div>
+    <div>
+      <div class="card" style="border-color:var(--accent-4);">
+        <h3 style="color:var(--accent-4);">One workspace, one budget</h3>
+        <p>All calls share one <code>asyncio</code> semaphore (<code>LLM_MAX_CONCURRENCY=3</code>), including streams. Retries: tenacity, transient errors only (429/5xx/timeout), exponential backoff with jitter; a 4xx fails fast. Slots are taken per attempt so backoff never blocks other calls.</p>
+      </div>
+      <div class="card" style="border-color:var(--accent-4);">
+        <h3 style="color:var(--accent-4);">Structured output, hardened</h3>
+        <p>Function-calling structured output everywhere; if the provider rejects the schema or the parse fails, a JSON-mode prompt with the schema is the fallback, so a bad structured call still succeeds.</p>
+      </div>
+      <div class="card" style="border-color:var(--accent-4);">
+        <h3 style="color:var(--accent-4);">Why these trade-offs</h3>
+        <p>Free-tier limits shape concurrency design; open-weight lineage means the bank could self-host the same model families for data residency without redesigning the graph. Lock-in is one env change (<code>init_chat_model</code>).</p>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>ADR 0001 · docs/DESIGN.md — model selection</span><span>10 / 16</span></div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="kicker">LangGraph usage</div>
+  <h1>The framework features the brief asks for, each earning its place</h1>
+  <div class="content">
+    <table style="font-size:14px;">
+      <tr><th>Feature</th><th>Where</th><th>Why</th></tr>
+      <tr><td><b>StateGraph, explicit edges</b></td><td>whole graph + RLM subgraph</td><td>each step visible and explainable; conditional edges branch on typed values, not regex on prose</td></tr>
+      <tr><td><b>Custom reducers</b></td><td><code>add_messages</code>; errors appender</td><td>parallel nodes append findings/errors without clobbering each other; per-turn reset</td></tr>
+      <tr><td><b><code>Send</code> fan-out</b></td><td>RLM batches</td><td>N parallel analyse_batch calls, bounded by batches ≤8 and the shared LLM semaphore</td></tr>
+      <tr><td><b>Checkpointer (SQLite)</b></td><td>chat graph, thread = <code>{user}:{thread}</code></td><td>conversation memory, multi-turn follow-ups, and interrupted approvals survive restarts</td></tr>
+      <tr><td><b><code>interrupt()</code> / <code>Command(resume=…)</code></b></td><td>admin tools</td><td>hard pause until a human decides; the model cannot approve its own request</td></tr>
+      <tr><td><b>Custom stream events</b></td><td>every node, via stream writer</td><td>typed activity events (<code>route</code>, <code>retrieval</code>, <code>tool_call</code>…) relayed over SSE; <code>subgraphs=True</code> so RLM events arrive too</td></tr>
+    </table>
+    <p class="small" style="margin-top:14px;">Memory rule: once a thread exceeds <b>12 messages</b>, everything beyond the last <b>6</b> is folded into a rolling summary by the fast model. The supervisor and response agents see those 6 verbatim plus the summary. Every memory read/write emits a <code>memory</code> event.</p>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>11 / 16</span></div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="kicker">Observability</div>
+  <h1>A trace is the product: every run is explainable after the fact</h1>
+  <div class="content cols">
+    <div>
+      <div class="card" style="border-color:#555;">
+        <h3 style="color:#333;">LangSmith</h3>
+        <p>Every chat = run <code>compass_chat</code>, tagged <code>role:{role}</code> + metadata user/thread/request-id. LLM calls named <code>llm:main|fast|code</code>. Retrieval is <code>@traceable</code> retrievers whose outputs render as documents. RLM subgraph nests under the research node, so plan → batches → reduce reads as one tree. A shared fault flag makes the fallback route visible in traces.</p>
+      </div>
+      <div class="card" style="border-color:#555;">
+        <h3 style="color:#333;">structlog</h3>
+        <p>JSON on stdout with a <code>request_id</code> contextvar on every line (honours inbound <code>x-request-id</code>), user_id/role bound per request, one <code>http_request</code> line per call, structured events for fallbacks, retries, guard verdicts, rate limits. Log line ↔ trace join on request id.</p>
+      </div>
+    </div>
+    <div>
+      <p style="font-size:14.5px; margin-bottom:8px;"><b>The activity panel</b> renders 14 typed SSE events, live:</p>
+      <div class="mono" style="font-size:12px;">node_start node_end route retrieval tool_call
+research memory validation guardrail approval
+token answer error done</div>
+      <ul style="font-size:13.5px; line-height:1.7; margin-top:12px;">
+        <li>Routing reasoning, one sentence, in the panel</li>
+        <li>Retrieval hits with dense / sparse / fused scores per source</li>
+        <li>The RLM's generated Python plan, sandbox outcome, batches</li>
+        <li>Tool calls with denials, previews, pending-approval payloads</li>
+        <li>Sources, degraded notes and per-node timings on every answer</li>
+      </ul>
+      <p class="small">Reducers in <code>ui/activity.py</code> are pure and unit-tested — panel formatting never trusted to a live LLM.</p>
+    </div>
+  </div>
+  <div class="foot"><span>ADR 0006 — SSE custom stream events</span><span>12 / 16</span></div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="kicker">Async &amp; failure handling</div>
+  <h1>Time budget on every external call, and a script to watch each one fail</h1>
+  <div class="content cols">
+    <div>
+      <table>
+        <tr><th>Call</th><th>Timeout</th><th>Then</th></tr>
+        <tr><td>LLM invoke / stream chunk</td><td><code>LLM_TIMEOUT_S</code>=60 per attempt</td><td>retry → fallback model → source-listing fallback</td></tr>
+        <tr><td>Pinecone fan-out (5 ns × 2 indexes)</td><td>10 s whole fan-out</td><td>other index → BM25</td></tr>
+        <tr><td>MCP tool call</td><td>10 s</td><td><code>ToolUnavailableError</code> + "directory temporarily unavailable" answer</td></tr>
+        <tr><td>Sandbox plan</td><td>30 s wall clock + rlimits</td><td>short error fed back to the planner (1 retry)</td></tr>
+      </table>
+      <p class="small" style="margin-top:10px;">Plus: per-user token bucket (10 burst, 0.2/s refill) and one shared LLM semaphore — concurrency is a budget, not a hope.</p>
+    </div>
+    <div>
+      <p style="font-size:14.5px; margin-bottom:8px;"><b>Fault flags</b> (env, restart, demo):</p>
+      <table>
+        <tr><th>Flag</th><th>What the demo shows</th></tr>
+        <tr><td><code>FAULT_LLM</code></td><td>main model fails on every call → fast-model fallback, an <code>llm_fallback</code> log, same answer streaming</td></tr>
+        <tr><td><code>FAULT_PINECONE</code></td><td>BM25 answers with the same access filters, degraded flag + user note</td></tr>
+        <tr><td><code>FAULT_MCP</code></td><td>directory down → answer says so, nothing crashes</td></tr>
+        <tr><td><code>FAULT_TOOL_TIMEOUT</code></td><td>simulated hang → timeout path, same degraded answer</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>13 / 16</span></div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="kicker">Code quality &amp; verification</div>
+  <h1>217 tests, grouped exactly like the architecture</h1>
+  <div class="content cols">
+    <div>
+      <table>
+        <tr><th>Area</th><th>Test files</th><th>#</th></tr>
+        <tr><td>Agent graph, routing, validation</td><td>test_graph, guard_graph, validator, chat_resume, health</td><td class="num">31</td></tr>
+        <tr><td>Retrieval &amp; ingestion</td><td>test_chunk, hybrid, fallback_bm25</td><td class="num">17</td></tr>
+        <tr><td>RLM primitives &amp; sandbox</td><td>test_primitives, sandbox, research</td><td class="num">26</td></tr>
+        <tr><td>Guardrails</td><td>test_input_guard, output_guard, sanitizer</td><td class="num">33</td></tr>
+        <tr><td>Tools, MCP, admin approval</td><td>test_tools, tools_agent, mcp_server</td><td class="num">35</td></tr>
+        <tr><td>LLM plumbing (fallbacks, retries)</td><td>test_llm</td><td class="num">7</td></tr>
+        <tr><td>Auth &amp; rate limiting</td><td>test_auth, rate_limit</td><td class="num">9</td></tr>
+        <tr><td>UI (activity reducers, API client)</td><td>test_ui_activity, ui_client</td><td class="num">26</td></tr>
+        <tr><td>Scripted demo cases</td><td>test_smoke_demo</td><td class="num">33</td></tr>
+        <tr><td><b>Tools</b></td><td colspan="2"><code>uv run pytest</code> · <code>uv run ruff check .</code> (E, F, I, B, UP, ASYNC)</td></tr>
+      </table>
+    </div>
+    <div>
+      <ul style="font-size:14.5px; line-height:1.9;">
+        <li><b>Red-team prompts</b> as test fixtures: injection, exfiltration, secret requests, system-prompt reveal</li>
+        <li><b>Fault injection</b> covered by tests, not just the demo</li>
+        <li><b>Smoke script</b> (<code>scripts/smoke_demo.py</code>) runs the demo cases against a live API and asserts on the SSE event stream; <code>evals/ground_truth.json</code> holds the expected answers</li>
+        <li><b>Pydantic everywhere</b>: state contracts, tool args (<code>extra="forbid"</code>), retrieval queries, event payloads</li>
+        <li><b>Docstrings explain why</b>, not what — the containment wrapper, the fusion choice, the no-leak primitives rule</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>Compass — internal</span><span>14 / 16</span></div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="kicker">Deliverables &amp; production gaps</div>
+  <h1>What ships with the POC — and the honest gap list</h1>
+  <div class="content cols">
+    <div>
+      <ul class="checklist">
+        <li>Public repo, incremental conventional commits</li>
+        <li>README: setup, demo users, demo script, fault flags, test map</li>
+        <li><code>docs/DESIGN.md</code> — model choice, memory, RAG, RLM, security, trade-offs</li>
+        <li>Architecture: Mermaid source + hand-drawn SVG</li>
+        <li>Six ADRs (model roles, hybrid retrieval, sandbox, guards-as-nodes, interrupt approval, SSE events)</li>
+        <li>217 pytest tests, ruff-clean style, fault injection</li>
+        <li>Docker Compose: one image, api :8000 + ui :8501</li>
+        <li class="todo">45-min demo video: <code>&lt;link&gt;</code></li>
+        <li class="todo">LangSmith trace: <code>&lt;link&gt;</code></li>
+      </ul>
+    </div>
+    <div>
+      <table style="font-size:13px;">
+        <tr><th>POC shortcut</th><th>Production replacement</th></tr>
+        <tr><td>3 hardcoded users, HS256</td><td>Bank IdP via OIDC (Keycloak); RBAC code unchanged</td></tr>
+        <tr><td>In-memory rate limiter</td><td>Redis bucket shared across replicas</td></tr>
+        <tr><td>SQLite checkpointer</td><td>Postgres for multi-replica durability</td></tr>
+        <tr><td>Subprocess sandbox (AST + rlimits)</td><td>gVisor / Firecracker microVM</td></tr>
+        <tr><td>Max-normalised fusion, no reranker</td><td>cross-encoder rerank once corpus grows</td></tr>
+        <tr><td>Ground-truth seed (7 cases)</td><td>eval harness wired into CI</td></tr>
+        <tr><td>Keys in .env, Pinecone namespaces</td><td>secrets manager; per-tenant indexes/projects</td></tr>
+        <tr><td>Session memory only</td><td>long-term per-user store + feedback loop</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="foot"><span>Full list: README “Limitations &amp; next steps” · DESIGN.md “Production gaps”</span><span>15 / 16</span></div>
+</section>
+
+<!-- 16 -->
+<section class="slide title-slide">
+  <div class="kicker">Hand-off</div>
+  <h1 style="font-size:38px;">Reading map &amp; what we ask of reviewers</h1>
+  <div class="content cols center" style="justify-content:center; color:#e3edf8;">
+    <div>
+      <p style="color:#e3edf8; font-size:15px; line-height:1.9;">
+        <b style="color:#fff;">5-minute path:</b> README → architecture.svg → this deck<br>
+        <b style="color:#fff;">30-minute path:</b> + DESIGN.md, the 6 ADRs, <code>evals/ground_truth.json</code><br>
+        <b style="color:#fff;">Deep dive:</b> <code>app/agents/graph.py</code> · <code>app/rlm/</code> · <code>app/core/llm.py</code> · <code>app/security/</code>
+      </p>
+      <p style="color:#bcd0e6; font-size:14px; margin-top:22px;">Run it: <code>uv sync</code> → keys from <code>.env.example</code> → <code>scripts.setup_pinecone</code> → <code>ingestion.ingest</code> → uvicorn + Streamlit,<br>or <code>docker compose up --build</code>. Demo users: vera / anil / ada.</p>
+      <p style="color:#bcd0e6; font-size:14px; margin-top:22px;">Feedback wanted: RLM plan quality, guard false-positive rates, and whether the fusion weight<br>(<code>HYBRID_ALPHA=0.6</code>) survives a real corpus.</p>
+      <p style="color:#8fb0d4; font-size:12.5px; margin-top:26px;">Compass — internal · all bank data is fictional mock data</p>
+    </div>
+  </div>
+  <div class="foot" style="color:#bcd0e6;"><span>Compass — internal</span><span>16 / 16</span></div>
+</section>
+
+<div class="navbtns" style="position:absolute; top:12px; right:16px; z-index:10; background:rgba(255,255,255,.7); border-radius:8px; padding:4px 8px;">
+  <span style="font-size:10px; color:var(--muted);">← → navigate</span>
+  <button onclick="nav(-1)">‹</button>
+  <span id="counter" style="font-size:12px; align-self:center;"></span>
+  <button onclick="nav(1)">›</button>
+</div>
+</div>
+
+<script>
+(function () {
+  var slides = document.querySelectorAll(".slide");
+  var i = 0;
+  function show() {
+    for (var k = 0; k < slides.length; k++) slides[k].classList.remove("active");
+    slides[i].classList.add("active");
+    document.getElementById("progress").style.width = ((i + 1) / slides.length * 100) + "%";
+    document.getElementById("counter").textContent = (i + 1) + " / " + slides.length;
+  }
+  window.nav = function (d) { i = Math.min(slides.length - 1, Math.max(0, i + d)); show(); };
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") { nav(1); e.preventDefault(); }
+    if (e.key === "ArrowLeft" || e.key === "PageUp") { nav(-1); e.preventDefault(); }
+    if (e.key === "Home") { i = 0; show(); }
+    if (e.key === "End") { i = slides.length - 1; show(); }
+  });
+  document.getElementById("deck").addEventListener("click", function (e) {
+    if (e.target.closest("button")) return;
+    nav(e.clientX > window.innerWidth / 2 ? 1 : -1);
+  });
+  var sx = null;
+  document.addEventListener("touchstart", function (e) { sx = e.touches[0].clientX; });
+  document.addEventListener("touchend", function (e) {
+    if (sx === null) return;
+    var dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 40) nav(dx < 0 ? 1 : -1);
+    sx = null;
+  });
+  show();
+})();
+</script>
+</body>
+</html>
