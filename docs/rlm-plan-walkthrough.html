@@ -1,0 +1,402 @@
+<title>RLM Plan Walkthrough</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* Layout: two process columns (sandbox child | parent API) joined by an RPC wire, stepped by one control bar. Palette follows the demo deck. */
+:root {
+  --paper: #F6F5F0; --card: #FDFCF9; --ink: #14213D; --text: #46505E; --muted: #7A8594;
+  --line: #D5DAE1; --blue: #2F6FB5; --blue-soft: #E6EEF8; --amber: #C77D1A; --amber-soft: #FBF1E1;
+  --green: #2E7D5B; --green-soft: #E3F1EA; --red: #B23A3A; --red-soft: #F7E3E3;
+  --code-bg: #14213D; --code-fg: #DCE3EC; --code-dim: #7D8BA3; --code-hl: #26385E;
+  --display: 'Space Grotesk', 'IBM Plex Sans', Arial, sans-serif;
+  --body: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', 'JetBrains Mono', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #10151F; --card: #171E2B; --ink: #EEF1F6; --text: #C3CCD8; --muted: #8592A5;
+  --line: #2C3648; --blue: #6FA3DD; --blue-soft: #1B2A40; --amber: #E8A84A; --amber-soft: #33281A;
+  --green: #5DBB8D; --green-soft: #17302A; --red: #E07B7B; --red-soft: #3A1F22;
+  --code-bg: #0B1018; --code-fg: #DCE3EC; --code-dim: #6E7C93; --code-hl: #22324F; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #10151F; --card: #171E2B; --ink: #EEF1F6; --text: #C3CCD8; --muted: #8592A5;
+  --line: #2C3648; --blue: #6FA3DD; --blue-soft: #1B2A40; --amber: #E8A84A; --amber-soft: #33281A;
+  --green: #5DBB8D; --green-soft: #17302A; --red: #E07B7B; --red-soft: #3A1F22;
+  --code-bg: #0B1018; --code-fg: #DCE3EC; --code-dim: #6E7C93; --code-hl: #22324F; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--paper); color: var(--text); font: 15px/1.55 var(--body); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 32px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 28px; }
+h1, h2, h3 { font-family: var(--display); color: var(--ink); margin: 0; text-wrap: balance; font-weight: 600 }
+h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.15 }
+h2 { font-size: 21px }
+h3 { font-size: 16px }
+p { margin: 0 }
+.eyebrow { font: 600 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--blue) }
+code, .mono { font-family: var(--mono); font-size: .92em }
+header { display: flex; flex-direction: column; gap: 10px; max-width: 820px }
+.lede { font-size: 17px; max-width: 70ch }
+.question { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px }
+.question q { font-family: var(--display); font-size: 18px; color: var(--ink); quotes: "“" "”" }
+.chip { font: 600 12px var(--mono); padding: 3px 9px; border-radius: 99px; background: var(--blue-soft); color: var(--blue); white-space: nowrap }
+.chip.amber { background: var(--amber-soft); color: var(--amber) }
+.chip.green { background: var(--green-soft); color: var(--green) }
+.chip.red { background: var(--red-soft); color: var(--red) }
+
+/* control bar */
+.controls { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--paper);
+  padding-block: 10px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--line) }
+.steps { display: flex; gap: 6px; flex-wrap: wrap }
+.steps button { font: 600 13px var(--body); border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; display: flex; gap: 6px; align-items: baseline }
+.steps button b { font-family: var(--mono); color: var(--muted) }
+.steps button[aria-current="step"] { background: var(--ink); color: var(--paper); border-color: var(--ink) }
+.steps button[aria-current="step"] b { color: var(--amber) }
+.steps button:focus-visible, .nav button:focus-visible, .roles button:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px }
+.narration { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap }
+.narration p { flex: 1 1 420px; min-width: 0; font-size: 15.5px; color: var(--ink) }
+.nav { display: flex; gap: 6px }
+.nav button { font: 600 13px var(--body); border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--ink); background: var(--card); color: var(--ink) }
+.nav button.primary { background: var(--blue); border-color: var(--blue); color: #fff }
+.nav button:disabled { opacity: .4; cursor: default }
+
+/* stage */
+.stage { display: grid; grid-template-columns: minmax(0, 1.05fr) 200px minmax(0, 1fr); gap: 0; align-items: stretch }
+.zone { border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0 }
+.zone-head { display: flex; flex-direction: column; gap: 4px }
+.zone-head .rules { display: flex; flex-wrap: wrap; gap: 6px }
+.child { border: 2px dashed var(--amber); background: var(--card) }
+.parent { border: 2px solid var(--blue); background: var(--card) }
+
+pre.plan { margin: 0; background: var(--code-bg); color: var(--code-fg); border-radius: 10px; padding: 12px 0;
+  font: 13px/1.6 var(--mono); overflow-x: auto; counter-reset: ln }
+pre.plan span.l { display: block; padding: 0 14px 0 0; white-space: pre; transition: background .2s }
+pre.plan span.l::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 34px; text-align: right;
+  padding-right: 12px; color: var(--code-dim) }
+pre.plan span.l.on { background: var(--code-hl); box-shadow: inset 3px 0 0 var(--amber) }
+.k { color: #E8A84A } .s { color: #9FD3A8 } .f { color: #8CC0F5 } .c { color: var(--code-dim) }
+.sandbox-state { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px }
+.check { display: flex; gap: 8px; align-items: baseline; font-size: 13px; padding: 7px 9px; border-radius: 8px; background: var(--paper); border: 1px solid var(--line) }
+.check .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; transform: translateY(1px) }
+.check.ok .dot { background: var(--green) }
+.counter { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px }
+.counter b { font: 600 18px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums }
+
+/* wire */
+.wire { display: flex; flex-direction: column; gap: 8px; padding: 16px 10px; position: relative }
+.wire::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 2px dotted var(--line) }
+.wire-title { position: relative; background: var(--paper); text-align: center; font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 4px 0 }
+.msg { position: relative; font: 11.5px/1.45 var(--mono); padding: 7px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); word-break: break-word }
+.msg.out { border-color: var(--amber); }
+.msg.in { border-color: var(--blue); }
+.msg .dir { display: block; font-weight: 600; font-size: 11px; color: var(--muted); margin-bottom: 2px }
+.msg.out .dir { color: var(--amber) } .msg.in .dir { color: var(--blue) }
+.wire-empty { position: relative; background: var(--paper); font-size: 12.5px; color: var(--muted); text-align: center; padding: 6px 0 }
+
+/* parent */
+.sources { display: flex; flex-direction: column; gap: 12px }
+.source { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; transition: opacity .25s, border-color .25s }
+.source.idle { opacity: .55 }
+.source.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft) }
+.source-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap }
+.source-head small { color: var(--muted); font-size: 12px }
+.dept { display: flex; flex-direction: column; gap: 4px }
+.dept-name { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted) }
+.docs { display: flex; flex-wrap: wrap; gap: 4px }
+.doc { font: 11px var(--mono); padding: 3px 6px; border-radius: 5px; border: 1px solid var(--line); background: var(--paper); color: var(--text); transition: all .25s; position: relative }
+.doc.hidden { background: repeating-linear-gradient(135deg, var(--red-soft) 0 4px, transparent 4px 8px); color: var(--red); border-color: var(--red); text-decoration: line-through }
+.doc.out { opacity: .35 }
+.doc.pick { background: var(--blue-soft); border-color: var(--blue); color: var(--ink); font-weight: 600 }
+.doc.read { background: var(--green-soft); border-color: var(--green); color: var(--ink); font-weight: 600 }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted) }
+.legend span { display: flex; gap: 5px; align-items: center }
+.legend i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); display: inline-block }
+.roles { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; font-size: 12.5px }
+.roles button { font: 600 12px var(--mono); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer }
+.roles button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink) }
+.why { font-size: 12.5px; color: var(--muted) }
+
+/* after the sandbox */
+.after { display: flex; flex-direction: column; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px }
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px }
+.stagebox { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; transition: all .25s; background: var(--paper) }
+.stagebox.active { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); background: var(--card) }
+.stagebox .who { font: 600 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em }
+.stagebox p { font-size: 13.5px }
+.batches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px }
+.batch { font: 10.5px var(--mono); text-align: center; padding: 4px 2px; border-radius: 5px; background: var(--blue-soft); color: var(--ink); border: 1px solid transparent }
+.stagebox.active .batch { border-color: var(--blue); animation: pulse 1.6s ease-in-out infinite }
+.batch:nth-child(2n) { animation-delay: .2s } .batch:nth-child(3n) { animation-delay: .4s }
+@keyframes pulse { 50% { background: var(--card) } }
+@media (prefers-reduced-motion: reduce) { .stagebox.active .batch { animation: none } * { transition: none !important } }
+
+/* cannot */
+.cannot { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px }
+.cannot div { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px }
+.cannot code { color: var(--red) }
+.cannot p { font-size: 13.5px }
+footer { font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px }
+
+@media (max-width: 980px) {
+  .stage { grid-template-columns: minmax(0, 1fr); gap: 12px }
+  .wire { padding: 4px 0 }
+  .wire::before { display: none }
+  .flow { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+}
+@media (max-width: 520px) { .flow { grid-template-columns: minmax(0, 1fr) } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Research path · RLM</span>
+    <h1>What the generated Python does, and which data it touches</h1>
+    <p class="lede">The code model writes a short Python plan. The plan never sees data directly: it runs in an empty child process and can only call four functions. Each call goes back to the parent API process, which reads the data and applies the user's clearance from their token.</p>
+    <div class="question">
+      <span class="chip">analyst · clearance: confidential</span>
+      <q>What were the recurring root causes of payment incidents in the last year?</q>
+      <span class="chip amber">today 2026-11-08</span>
+    </div>
+  </header>
+
+  <div class="controls">
+    <div class="steps" id="steps" role="tablist" aria-label="Steps"></div>
+    <div class="narration">
+      <p id="narration"></p>
+      <div class="nav">
+        <button id="prev" type="button">Back</button>
+        <button id="next" type="button" class="primary">Next step</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="stage" aria-label="Sandbox and parent process">
+    <div class="zone child">
+      <div class="zone-head">
+        <span class="eyebrow" style="color:var(--amber)">Sandbox child process</span>
+        <h2>The generated plan</h2>
+        <div class="rules">
+          <span class="chip amber">python -I</span><span class="chip amber">empty env, no API keys</span>
+          <span class="chip amber">no network (unshare -rn)</span><span class="chip amber">CPU 20 s · 512 MB</span>
+        </div>
+      </div>
+      <pre class="plan" id="plan" aria-label="Generated plan code"></pre>
+      <div class="sandbox-state" id="checks"></div>
+      <div class="counter">
+        <span>primitive calls <b id="calls">0</b> / 40</span>
+        <span>llm_query <b id="llmq">0</b> / 12</span>
+        <span>wall clock limit <b>30 s</b></span>
+      </div>
+    </div>
+
+    <div class="wire" aria-label="JSON-lines messages over stdin and stdout">
+      <div class="wire-title">stdin / stdout<br>JSON lines</div>
+      <div id="wire" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+
+    <div class="zone parent">
+      <div class="zone-head">
+        <span class="eyebrow">Parent API process · PrimitiveSession(user)</span>
+        <h2>The data behind the four functions</h2>
+        <div class="roles" id="roles"><span>Clearance from the JWT:</span></div>
+      </div>
+      <div class="sources">
+        <div class="source" id="src-corpus">
+          <div class="source-head"><h3>Local corpus <code>data/corpus/*.md</code></h3><small id="corpus-count"></small></div>
+          <p class="why"><code>list_documents()</code> reads only metadata here. <code>get_sections()</code> reads section text, split into chunks with ids like <code>INC-2026-0819#03</code>.</p>
+          <div id="corpus"></div>
+          <div class="legend">
+            <span><i style="background:var(--blue-soft);border-color:var(--blue)"></i>returned by list_documents</span>
+            <span><i style="background:var(--green-soft);border-color:var(--green)"></i>sections read</span>
+            <span><i style="background:var(--red-soft);border-color:var(--red)"></i>above clearance: never returned</span>
+          </div>
+        </div>
+        <div class="source idle" id="src-pinecone">
+          <div class="source-head"><h3><code>search()</code> → Pinecone hybrid</h3><small>not called by this plan</small></div>
+          <p class="why">Dense + sparse indexes with the same <code>access_rank ≤ clearance</code> filter (BM25 if Pinecone is down), 3 chunks per doc, no rerank. The planner is told to use it only when metadata cannot narrow the candidates.</p>
+        </div>
+        <div class="source idle" id="src-llm">
+          <div class="source-head"><h3><code>llm_query()</code> → Mistral fast model</h3><small>not called by this plan</small></div>
+          <p class="why">For a judgement inside the plan. Capped at 12 calls and 12,000 context characters per run, counted before the call.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="after" aria-label="After the sandbox">
+    <div class="zone-head">
+      <span class="eyebrow">After the child exits · LangGraph research subgraph</span>
+      <h2>The plan collects evidence. Other nodes write the answer.</h2>
+    </div>
+    <div class="flow">
+      <div class="stagebox" id="f-verify"><span class="who">execute node</span><h3>Keep only real chunk ids</h3><p>Every id in <code>result["batches"]</code> must be one the parent actually returned to this plan. An invented id is dropped.</p></div>
+      <div class="stagebox" id="f-send"><span class="who">Send ×8 → analyse_batch</span><h3>Batches in parallel</h3><div class="batches" id="batches"></div><p>The fast model reads each batch and extracts the task's facts.</p></div>
+      <div class="stagebox" id="f-reduce"><span class="who">reduce · main model</span><h3>Join the findings</h3><p>Groups the findings into recurring causes, for example expired certificates and retry storms, each with citations.</p></div>
+      <div class="stagebox" id="f-loop"><span class="who">depth &lt; 2</span><h3>Follow up, or answer</h3><p>If reduce finds a gap, it plans again with a follow-up question. Then response and validator check every citation.</p></div>
+    </div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:12px" aria-label="What the plan cannot do">
+    <h2>What the plan cannot do, and which layer stops it</h2>
+    <div class="cannot">
+      <div><code>import os</code> · <code>open("…")</code><p>AST check before the run: imports allowed only from json, re, math, statistics, collections, itertools, datetime, functools. No open, eval, exec or getattr. Checked again at run time.</p></div>
+      <div><code>x.__class__.__bases__</code><p>AST check: no names that start with <code>__</code>, no attributes that start with <code>_</code>. Builtins are an allow-list.</p></div>
+      <div><code>list_documents(access_level="restricted")</code><p>Unknown arguments are rejected. Clearance comes from the session, never from the plan.</p></div>
+      <div><code>get_sections("POL-SEC-004")</code><p>Hidden and missing documents both return <code>[]</code>, so the plan cannot learn that a hidden one exists.</p></div>
+      <div><code>while True: search(…)</code><p>40 calls, 30 s wall clock, CPU and memory limits. The child is killed when the run ends.</p></div>
+      <div><code>os.environ["MISTRAL_API_KEY"]</code><p>The child starts with an empty environment and no network, so it has no key and nowhere to send one.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Source: <code>app/rlm/planner.py</code>, <code>sandbox.py</code>, <code>primitives.py</code>, <code>app/agents/nodes/research.py</code></span>
+    <span>Corpus metadata is the real fictional corpus (25 docs). The plan is a representative example of what the planner writes for this question.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const DOCS = [
+    ["corporate","POL-HR-003","policy","public","2025-10-01","final"],
+    ["payments","ARCH-PAY-001","architecture","internal","2026-01-10","final"],
+    ["payments","INC-2024-0815","incident","internal","2024-08-15","final"],
+    ["payments","INC-2025-1207","incident","internal","2025-12-07","final"],
+    ["payments","INC-2026-0125","incident","internal","2026-01-25","final"],
+    ["payments","INC-2026-0214","incident","internal","2026-02-14","final"],
+    ["payments","INC-2026-0304","incident","internal","2026-03-04","final"],
+    ["payments","INC-2026-0525","incident","internal","2026-05-25","final"],
+    ["payments","INC-2026-0712-DRAFT","incident","internal","2026-07-12","draft"],
+    ["payments","INC-2026-0712","incident","internal","2026-07-12","final"],
+    ["payments","INC-2026-0819","incident","internal","2026-08-19","final"],
+    ["payments","INC-2026-0925","incident","internal","2026-09-25","final"],
+    ["payments","MTG-PAY-2026-10","meeting_notes","confidential","2026-10-06","final"],
+    ["payments","RB-PAY-003-V1","runbook","internal","2025-03-02","superseded"],
+    ["payments","RB-PAY-003-V2","runbook","internal","2026-02-20","final"],
+    ["payments","SPEC-PAY-010","spec","internal","2025-11-18","final"],
+    ["platform","ARCH-PLT-002","architecture","internal","2025-12-15","final"],
+    ["platform","INC-2026-0611","incident","internal","2026-06-11","final"],
+    ["platform","MTG-PLT-2026-09","meeting_notes","internal","2026-09-16","final"],
+    ["platform","RB-PLT-007","runbook","internal","2026-06-03","final"],
+    ["retail","POL-RET-002","policy","public","2025-07-01","final"],
+    ["retail","SPEC-RET-005","spec","internal","2026-05-12","final"],
+    ["security","POL-SEC-001","policy","internal","2025-09-01","final"],
+    ["security","POL-SEC-002","policy","public","2026-04-01","final"],
+    ["security","POL-SEC-004","policy","restricted","2026-03-15","final"],
+  ].map(([dept,id,type,access,date,status]) => ({dept,id,type,access,date,status}));
+  const RANK = {public:0, internal:1, confidential:2, restricted:3};
+  const ROLES = {viewer:1, analyst:2, admin:3};
+  const ROLE_LABEL = {viewer:"internal", analyst:"confidential", admin:"restricted"};
+  let role = "analyst";
+
+  const selected = d => d.type==="incident" && d.dept==="payments" && d.date>="2025-11-08" && d.status==="final";
+  const PICKED = DOCS.filter(selected).map(d => d.id);
+
+  const PLAN = [
+    [`<span class="c"># written by the code model (CODE_LLM_MODEL); no imports needed</span>`],
+    [`docs = <span class="f">list_documents</span>(document_type=<span class="s">"incident"</span>, department=<span class="s">"payments"</span>,`, 2],
+    [`                      date_from=<span class="s">"2025-11-08"</span>, status=<span class="s">"final"</span>)`, 2],
+    [`batches = []`, 3],
+    [`<span class="k">for</span> d <span class="k">in</span> docs:`, 3],
+    [`    secs = <span class="f">get_sections</span>(d[<span class="s">"doc_id"</span>],`, 3],
+    [`                        sections=[<span class="s">"Summary"</span>, <span class="s">"Root cause"</span>, <span class="s">"Action items"</span>])`, 3],
+    [`    ids = [s[<span class="s">"chunk_id"</span>] <span class="k">for</span> s <span class="k">in</span> secs]`, 3],
+    [`    <span class="k">if</span> ids:`, 3],
+    [`        batches.append(ids)`, 3],
+    [`result = {`, 4],
+    [`    <span class="s">"documents"</span>: [d[<span class="s">"doc_id"</span>] <span class="k">for</span> d <span class="k">in</span> docs],`, 4],
+    [`    <span class="s">"batches"</span>: batches,`, 4],
+    [`    <span class="s">"task"</span>: <span class="s">"For each incident: what failed and the root cause."</span>,`, 4],
+    [`    <span class="s">"data"</span>: {<span class="s">"incidents"</span>: len(docs)},`, 4],
+    [`}`, 4],
+  ];
+
+  const STEPS = [
+    { label:"Plan written", text:"The supervisor routes the question to research. The role is checked again, then the code model writes this plan. Its prompt holds only the question, the rules, and a description of the four functions it may call (names, parameters, valid filter values, what each returns). It has not seen any document yet." },
+    { label:"Checked & started", text:"Before it runs, an AST check rejects bad imports, dunder names and banned calls. Then a child process starts with no environment, no network and CPU and memory limits. The parent sends one init line: the code, the four function names and the allowed imports." },
+    { label:"list_documents", text:"Line 2 looks like a normal function call, but it only prints a JSON line to stdout. The parent reads the 25 corpus files' metadata, drops anything above the user's clearance, applies the filters and sends back 8 rows. No body text." },
+    { label:"get_sections ×8", text:"The loop asks for three named sections of each incident. Each call is one round trip. The parent returns the chunk text and records every chunk id it handed out in an evidence registry." },
+    { label:"result", text:"The plan sets result: 8 documents, 8 batches of chunk ids and a task. The child sends a done message and is killed. 9 of the 40 allowed calls were used. Pinecone and llm_query were never needed." },
+    { label:"Verify & fan out", text:"Back in LangGraph, execute keeps only chunk ids that are in the evidence registry. Each batch goes to analyse_batch in parallel with Send, and the fast model extracts what failed and why." },
+    { label:"Reduce", text:"The main model joins the eight sets of findings into recurring causes with citations. If a gap remains and depth is below 2, it plans again. Otherwise the answer goes to response and the validator." },
+  ];
+
+  const WIRE = [
+    [],
+    [["out","parent → child  init","{\"code\": \"docs = list_documents(…\", \"primitives\": [\"get_sections\", \"list_documents\", \"llm_query\", \"search\"], \"allowed_imports\": [\"collections\", …]}"]],
+    [["out","child → parent","{\"type\": \"call\", \"name\": \"list_documents\", \"kwargs\": {\"document_type\": \"incident\", \"department\": \"payments\", \"date_from\": \"2025-11-08\", \"status\": \"final\"}}"],
+     ["in","parent → child","{\"ok\": true, \"value\": [{\"doc_id\": \"INC-2025-1207\", \"title\": \"Card authorisations declined…\", \"created_date\": \"2025-12-07\", \"status\": \"final\", …}, … 8 rows]}"]],
+    [["out","child → parent  (1 of 8)","{\"type\": \"call\", \"name\": \"get_sections\", \"args\": [\"INC-2025-1207\"], \"kwargs\": {\"sections\": [\"Summary\", \"Root cause\", \"Action items\"]}}"],
+     ["in","parent → child","{\"ok\": true, \"value\": [{\"chunk_id\": \"INC-2025-1207#00\", \"section\": \"Summary\", \"text\": \"…\"}, …]}"],
+     ["out","… 7 more round trips","INC-2026-0125 · 0214 · 0304 · 0525 · 0712 · 0819 · 0925"]],
+    [["out","child → parent  done","{\"type\": \"done\", \"ok\": true, \"result\": {\"documents\": [8 ids], \"batches\": [[\"INC-2025-1207#00\", …], …], \"task\": \"…\"}, \"stdout\": \"\"}"]],
+    [], [],
+  ];
+
+  let step = 0;
+  const $ = id => document.getElementById(id);
+
+  $("plan").innerHTML = PLAN.map(([html]) => `<span class="l">${html}</span>`).join("");
+  $("steps").innerHTML = STEPS.map((s,i) => `<button type="button" role="tab" data-i="${i}"><b>${i+1}</b>${s.label}</button>`).join("");
+  $("steps").addEventListener("click", e => { const b = e.target.closest("button"); if (b) go(+b.dataset.i); });
+  $("prev").onclick = () => go(step-1);
+  $("next").onclick = () => go(step+1);
+  Object.keys(ROLES).forEach(r => {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = r; b.dataset.role = r;
+    b.onclick = () => { role = r; render(); };
+    $("roles").appendChild(b);
+  });
+  $("batches").innerHTML = PICKED.map(id => `<span class="batch">${id.replace("INC-","")}</span>`).join("");
+
+  function render() {
+    const s = step, clear = ROLES[role];
+    document.querySelectorAll("#steps button").forEach((b,i) => b.setAttribute("aria-current", i===s ? "step" : "false"));
+    document.querySelectorAll("#roles button").forEach(b => b.setAttribute("aria-pressed", b.dataset.role===role));
+    $("prev").disabled = s===0; $("next").disabled = s===STEPS.length-1;
+    $("narration").textContent = STEPS[s].text;
+
+    document.querySelectorAll("#plan .l").forEach((el,i) => {
+      const at = PLAN[i][1];
+      el.classList.toggle("on", s===0 ? true : at===s);
+    });
+
+    const checks = [["AST check passed", s>=1],["child started, init sent", s>=1],["done, child killed", s>=4]];
+    $("checks").innerHTML = checks.map(([t,ok]) => `<div class="check ${ok?"ok":""}"><span class="dot"></span>${t}</div>`).join("");
+    $("calls").textContent = s>=4 ? 9 : s===3 ? 9 : s===2 ? 1 : 0;
+    $("llmq").textContent = 0;
+
+    const w = WIRE[s] || [];
+    $("wire").innerHTML = w.length ? w.map(([dir,head,body]) =>
+      `<div class="msg ${dir}"><span class="dir">${dir==="out" && head.startsWith("parent") ? "↓ " : dir==="out" ? "→ " : "← "}${head}</span>${body.replace(/</g,"&lt;")}</div>`).join("")
+      : `<div class="wire-empty">${s===0 ? "No messages yet: the plan has not started." : "The child has exited. No more messages."}</div>`;
+
+    const visible = DOCS.filter(d => RANK[d.access] <= clear).length;
+    $("corpus-count").textContent = `${visible} of 25 visible to ${role}`;
+    const depts = [...new Set(DOCS.map(d => d.dept))];
+    $("corpus").innerHTML = depts.map(dep => `<div class="dept"><span class="dept-name">${dep}</span><div class="docs">${
+      DOCS.filter(d => d.dept===dep).map(d => {
+        let cls = "";
+        if (RANK[d.access] > clear) cls = "hidden";
+        else if (s>=2 && s<=4) cls = PICKED.includes(d.id) ? (s>=3 ? "read" : "pick") : "out";
+        else if (s>=5) cls = PICKED.includes(d.id) ? "read" : "out";
+        const why = RANK[d.access] > clear ? `${d.access}: above ${role} clearance` : `${d.type} · ${d.date} · ${d.status} · ${d.access}`;
+        return `<span class="doc ${cls}" title="${why}">${d.id}</span>`;
+      }).join("")}</div></div>`).join("");
+    $("src-corpus").classList.toggle("active", s===2 || s===3);
+
+    $("f-verify").classList.toggle("active", s===5);
+    $("f-send").classList.toggle("active", s===5);
+    $("f-reduce").classList.toggle("active", s===6);
+    $("f-loop").classList.toggle("active", s===6);
+  }
+  function go(i) { step = Math.max(0, Math.min(STEPS.length-1, i)); render(); }
+  document.addEventListener("keydown", e => {
+    if (e.target.closest("input,textarea")) return;
+    if (e.key==="ArrowRight") go(step+1);
+    if (e.key==="ArrowLeft") go(step-1);
+  });
+  render();
+})();
+</script>
