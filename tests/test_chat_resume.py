@@ -135,3 +135,34 @@ async def test_admin_chat_interrupts_then_resume_round_trip(monkeypatch) -> None
     # 3. The thread is no longer interrupted: a second resume is now a 4xx.
     third = await post(api, "/chat/resume", token, {"thread_id": "adm1", "approved": True})
     assert 400 <= third.status_code < 500
+
+
+async def test_resume_does_not_run_a_replanned_action(monkeypatch) -> None:
+    admin_calls = await admin_action_stubs(monkeypatch)
+    calls: list[int] = []
+
+    async def drifting_plan(_role, _schema, _messages, **_kw):
+        # First plan says payments (what the human approved); every re-plan says security.
+        calls.append(1)
+        department = "payments" if len(calls) == 1 else "security"
+        return ToolPlan(
+            calls=[ToolCallRequest(tool="reindex_department", args={"department": department})]
+        )
+
+    monkeypatch.setattr(tools_node_mod, "ainvoke_structured", drifting_plan)
+    api = make_app()
+    token = auth_mod.create_access_token(ADMIN)
+
+    first = await post(
+        api, "/chat/stream", token, {"message": "reindex payments", "thread_id": "drift"}
+    )
+    assert first.status_code == 200
+    assert "event: approval" in first.text
+    assert "payments" in first.text
+    assert admin_calls == []
+
+    second = await post(api, "/chat/resume", token, {"thread_id": "drift", "approved": True})
+    assert second.status_code == 200
+    assert admin_calls == [], "a re-planned action must never execute on a stale approval"
+    assert "changed after approval" in second.text
+    assert "event: done" in second.text

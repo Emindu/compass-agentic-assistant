@@ -142,10 +142,20 @@ async def chat_resume(
     if not can_use(user.role, "admin"):
         raise AuthorizationError("Only an admin may resolve pending approval requests.")
     config = run_config(user, body.thread_id)
-    if _pending_interrupt(await graph.aget_state(config)) is None:
+    pending = _pending_interrupt(await graph.aget_state(config))
+    if pending is None:
         raise InvalidRequestError("This thread has no pending approval to resolve.")
     log.info("chat_resume", thread_id=body.thread_id, approved=body.approved)
-    inputs = Command(resume={"approved": body.approved})
+    # The resume value is filled from the checkpointed interrupt, never from the client: the
+    # tools node (including the LLM plan) re-runs on resume, so the decision the human made
+    # carries the exact action they saw.
+    inputs = Command(
+        resume={
+            "approved": body.approved,
+            "tool": pending.get("tool"),
+            "args": pending.get("args"),
+        }
+    )
     return StreamingResponse(
         _event_stream(graph, inputs, config, body.thread_id),
         media_type="text/event-stream",

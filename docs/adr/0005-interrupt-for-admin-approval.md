@@ -9,7 +9,9 @@ proves nothing to auditors — the enforcement must be server-side.
 The tools agent may only *propose* admin actions: it validates arguments, renders a
 human-readable description and pauses the whole graph with LangGraph `interrupt()`. The
 checkpointer holds the interrupted state; the stream surfaces an `approval` event; only
-`POST /chat/resume` (admin-only endpoint) continues with `Command(resume={"approved": ...})`.
+`POST /chat/resume` (admin-only endpoint) continues with
+`Command(resume={"approved": ..., "tool": ..., "args": ...})`, where `tool` and `args` are
+filled by the server from the checkpointed interrupt.
 `execute_admin_tool` re-checks the role and requires `approved=True` at the effectful boundary
 and writes an `admin_action` audit log entry either way. Everything before `interrupt()` is free
 of side effects because it re-runs on resume.
@@ -19,4 +21,7 @@ of side effects because it re-runs on resume.
   its own request, and a manipulated tool call still cannot execute without a human decision.
 - The turn stays open on the checkpointer until resolved; anything before the interrupt must stay
   idempotent (validate + describe only, which the code does).
+- The node re-runs (including the LLM plan) on resume, so the approval is bound to the exact
+  tool and args the human approved; if the re-plan differs, nothing runs and the user is asked to
+  try again (fail closed).
 - Any future effectful admin tool must follow the same pattern (describe → interrupt → execute).

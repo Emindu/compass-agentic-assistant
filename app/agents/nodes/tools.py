@@ -29,6 +29,9 @@ from app.tools.mcp_client import ToolUnavailableError, call_mcp_tool
 
 MAX_TOOL_CALLS = 3
 
+_APPROVAL_MISMATCH = (
+    "The proposed action changed after approval, so nothing was run. Please ask again."
+)
 _DIRECTORY_UNAVAILABLE = "The directory service is temporarily unavailable."
 
 
@@ -83,8 +86,9 @@ async def _mcp_call(
 async def _admin_call(
     tool: str, args: dict, *, why: str, user: UserContext
 ) -> tuple[dict, AgentError | None]:
-    # Everything before interrupt() re-runs on resume, so this part stays free of side
-    # effects besides events: validate + describe only, never execute.
+    # Everything before interrupt() re-runs on resume — and that includes the LLM plan — so
+    # this part stays free of side effects besides events (validate + describe only) and the
+    # approval is bound below to the exact tool and args the human approved.
     try:
         validated = admin.ADMIN_TOOLS[tool].model_validate(args).model_dump()
     except ValidationError as exc:
@@ -123,6 +127,25 @@ async def _admin_call(
     if not approved:
         emit("tool_call", node="tools", tool=tool, status="rejected", args=validated, why=why)
         return _entry(tool, validated, ok=False, payload="Rejected by the approver."), None
+    if not (
+        isinstance(decision, dict)
+        and decision.get("tool") == tool
+        and decision.get("args") == validated
+    ):
+        # Fail closed: the plan re-ran on resume, so a bare approval (or one for a different
+        # tool/args) is not authorization for what this run is about to execute.
+        emit(
+            "tool_call",
+            node="tools",
+            tool=tool,
+            status="failed",
+            args=validated,
+            error=_APPROVAL_MISMATCH,
+        )
+        return (
+            _entry(tool, validated, ok=False, payload=_APPROVAL_MISMATCH),
+            AgentError(node="tools", code="approval_mismatch", message=_APPROVAL_MISMATCH),
+        )
     try:
         result = await admin.execute_admin_tool(tool, validated, user=user, approved=True)
     except Exception as exc:

@@ -14,6 +14,7 @@ from app.agents.nodes import response, retrieval, supervisor
 from app.agents.nodes import tools as tools_node_mod
 from app.agents.nodes.tools import ToolCallRequest, ToolPlan
 from app.agents.state import RouteDecision
+from app.api.routes.chat import _pending_interrupt
 from app.retrieval.models import RetrievalResult
 from app.security import input_guard
 from app.security.rbac import Role, UserContext
@@ -102,13 +103,15 @@ async def run_full(graph, user: UserContext, text: str, thread: str = "t1"):
 
 
 async def resume_events(graph, config: dict, approved: bool) -> list[dict]:
-    """Stream the graph with a resume Command, as POST /chat/resume does."""
-    return [
-        e
-        async for e in graph.astream(
-            Command(resume={"approved": approved}), config, stream_mode="custom"
-        )
-    ]
+    """Stream the graph with a resume Command, as POST /chat/resume does.
+
+    Like the API, the decision is bound to the tool/args checkpointed in the pending
+    interrupt: the node re-runs (and re-plans) on resume, so a bare approval must not
+    authorize whatever the new plan contains.
+    """
+    pending = _pending_interrupt(await graph.aget_state(config)) or {}
+    resume = {"approved": approved, "tool": pending.get("tool"), "args": pending.get("args")}
+    return [e async for e in graph.astream(Command(resume=resume), config, stream_mode="custom")]
 
 
 def tool_calls(events: list[dict]) -> list[dict]:
@@ -280,6 +283,28 @@ async def test_admin_action_rejected_never_executes(monkeypatch):
     assert values["tool_results"][0]["ok"] is False
     assert "Rejected" in values["tool_results"][0]["error"]
     assert any(e["type"] == "answer" for e in events), "rejection still ends with an answer"
+
+
+async def test_unbound_approval_does_not_execute(monkeypatch):
+    mcp, admin_calls = admin_approval_setup(monkeypatch)
+    graph = build_graph(InMemorySaver())
+    config = {"configurable": {"thread_id": "unbound1"}}
+    inputs = {"messages": [HumanMessage("reindex payments")], "user": ADMIN}
+
+    events = [e async for e in graph.astream(inputs, config, stream_mode="custom")]
+    assert "pending_approval" in [d["status"] for d in tool_calls(events)]
+
+    # A bare approval carries no tool/args, so it must not bind to (and run) the plan.
+    events = [
+        e
+        async for e in graph.astream(
+            Command(resume={"approved": True}), config, stream_mode="custom"
+        )
+    ]
+    assert admin_calls == [], "an unbound approval must never execute the admin tool"
+    assert any(d.get("status") == "failed" for d in tool_calls(events))
+    values = (await graph.aget_state(config)).values
+    assert [(e.node, e.code) for e in values["errors"]] == [("tools", "approval_mismatch")]
 
 
 async def test_tool_outside_role_in_plan_is_skipped(monkeypatch):
