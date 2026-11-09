@@ -268,7 +268,7 @@ Everything in one picture (wide, for reference): [docs/sequence.svg](docs/sequen
 | **Observability** | LangSmith tracing on every run with tags/metadata for role, user, thread and request id; run names for chats, LLM roles and retrievers. structlog JSON logs with a `request_id` correlation id on every line, plus user and role bound per request. The Streamlit activity panel renders every streamed step: routing decisions, retrieval hits with all three scores, RLM plan code, tool calls, validations, errors, timings. |
 | **Async** | Fully async FastAPI, graph, retrieval, tools and LLM calls. Timeouts on every external call (per-attempt LLM timeout, Pinecone fan-out timeout, MCP call timeout, sandbox wall clock). Tenacity retries on transient errors only (429/5xx/timeouts). One shared semaphore bounds LLM concurrency. Fault flags demonstrate the degraded paths. |
 | **RBAC** | Three roles with clearance ceilings (viewer→internal, analyst→confidential, admin→restricted) and tool permissions (viewer: search; analyst: + python analysis + MCP; admin: + admin actions). Enforced in routing, at tool execution, inside retrieval filters, and in RLM primitives — always derived from the verified JWT, never from model output. |
-| **Code quality** | Typed state and Pydantic models at every boundary; ruff (E, F, I, B, UP, ASYNC configured, line length 100); 283 pytest tests grouped by area (see Tests); one settings object for all tunables; scripts for setup, ingestion, smoke tests and the scripted demo. |
+| **Code quality** | Typed state and Pydantic models at every boundary; ruff (E, F, I, B, UP, ASYNC configured, line length 100); 285 pytest tests grouped by area (see Tests); one settings object for all tunables; scripts for setup, ingestion, smoke tests and the scripted demo. |
 | **Docs** | This README, [docs/DESIGN.md](docs/DESIGN.md) (design and decisions), [docs/adr/](docs/adr/) (six short ADRs), [docs/architecture.mmd](docs/architecture.mmd) + [docs/architecture.svg](docs/architecture.svg), and an eval harness over [evals/ground_truth.json](evals/ground_truth.json) (`uv run python -m scripts.run_evals`). |
 
 ## Quickstart
@@ -390,7 +390,7 @@ evals/              ground_truth.json (eval seed: 7 QA cases + 1 RLM case),
 ingestion/          chunk, ingest (Pinecone upsert), models
 mcp_server/         compass-directory FastMCP server + JSON datasets
 scripts/            setup_pinecone, smoke_llm, smoke_demo, search_demo, chat_cli, run_evals
-tests/              25 test modules, 283 tests
+tests/              25 test modules, 285 tests
 ui/                 streamlit_app, client (HTTP/SSE), activity (event reducers)
 (Dockerfile, docker-compose.yml: one image, api + ui services)
 ```
